@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVersion value="7.3.0"/>
+	<deviceVariant value="MSP432P401R"/>
+	<deviceFamily value="MSP432"/>
+	<deviceEndianness value="little"/>
+	<codegenToolVersion value="16.9.4.LTS"/>
+	<isElfFormat value="true"/>
+	<connection value="common/targetdb/connections/TIXDS110_Connection.xml"/>
+	<rts value="libc.a"/>
+	<createSlaveProjects value=""/>
+	<ignoreDefaultDeviceSettings value="true"/>
+	<templateProperties value="id=network_terminal_MSP_EXP432P401R_tirtos_ccs.projectspec.network_terminal_MSP_EXP432P401R_tirtos_ccs,buildProfile=release,isHybrid=true,"/>
+	<origin value="C:/Users/a0273029/Downloads/get_weather_and_time_msp432p4/get_weather_and_time_MSP_EXP432P401R_tirtos_ccs"/>
+	<filesToOpen value=""/>
+	<isTargetManual value="false"/>
+</projectOptions>
