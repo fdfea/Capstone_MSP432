@@ -40,9 +40,8 @@
 #include <ti/drivers/GPIO.h>
 
 #include "Board.h"
-//#include "system_msp432p401r.c"
 
-extern void *i2cThread(void *arg0);
+extern void *mainThread(void *arg0);
 
 /* Stack size in bytes */
 #define THREADSTACKSIZE    4096
@@ -52,7 +51,7 @@ extern void *i2cThread(void *arg0);
  */
 int main(void)
 {
-    pthread_t           thread;
+    pthread_t           thread;//, i2c_thread;
     pthread_attr_t      attrs;
     struct sched_param  priParam;
     int                 retc;
@@ -73,25 +72,23 @@ int main(void)
         while (1) {}
     }
 
-//    retc = pthread_create(&thread, &attrs, mainThread, NULL);
-//    if (retc != 0) {
-//        /* pthread_create() failed */
-//        while (1) {}
-//    }
+    retc = pthread_create(&thread, &attrs, mainThread, NULL);
+    if (retc != 0) {
+        while (1) {}
+    }
 
-    /* Set priority, detach state, and stack size attributes */
+    /*
     priParam.sched_priority = 3;
     retc = pthread_attr_setschedparam(&attrs, &priParam);
     if (retc != 0) {
-        /* failed to set attributes */
         while (1) {}
     }
 
-    retc = pthread_create(&thread, &attrs, i2cThread, NULL);
+    retc = pthread_create(&i2c_thread, &attrs, i2cThread, NULL);
     if (retc != 0) {
-        /* pthread_create() failed */
         while (1) {}
     }
+    */
 
     BIOS_start();
 

@@ -61,7 +61,7 @@ extern "C"
 /* AP SSID                                                                    */
 #define SSID_NAME               "" //ENTER NETWORK NAME HERE
 /* Security type (OPEN or WEP or WPA)                                         */
-#define SECURITY_TYPE           SL_WLAN_SEC_TYPE_WPA_WPA2
+#define SECURITY_TYPE           SL_WLAN_SEC_TYPE_WPA_WPA2 /*SL_WLAN_SEC_TYPE_OPEN*/
 /* Password of the secured AP                                                 */
 #define SECURITY_KEY            "" //ENTER NETWORK PASSWORD HERE
 

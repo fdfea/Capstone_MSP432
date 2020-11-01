@@ -46,6 +46,8 @@
 uint8_t txBuffer[32];
 uint8_t rxBuffer[32];
 
+extern volatile bool i2cThreadStop;
+
 
 
 void LED_Init(I2C_Handle i2c){
@@ -88,7 +90,7 @@ void LED_Color(I2C_Handle i2c, uint8_t led, uint8_t r, uint8_t g, uint8_t b){
 /*
  *  ======== mainThread ========
  */
-void *i2cThread(void *arg0)
+void *i2cThreadProc(void *arg0)
 {
     I2C_Handle      i2c;
     I2C_Params      i2cParams;
@@ -107,7 +109,7 @@ void *i2cThread(void *arg0)
     LED_Init(i2c);
 
     int i, j, k;
-    while(1){
+    while(!i2cThreadStop) {
         for (i = 0; i < 127; i++){
             LED_Color(i2c, 0, i, 0, 0);
         }

@@ -105,6 +105,7 @@ void LedTimerConfigNStart();
 void LedTimerDeinitStop();
 void RTC_C_IRQHandler(uintptr_t Arg);
 static void *udpServerThreadProc(void *pArg);
+extern void *i2cThreadProc(void *arg0);
 
 /****************************************************************************************************************
                    GLOBAL VARIABLES
@@ -156,7 +157,8 @@ uint8_t locTempString[400];
 uint8_t NumDaysReceived = 0;
 Tmp_Day_t Tmp_Day[5];
 
-volatile bool udpThreadStop = false;
+volatile bool udpThreadStop;
+volatile bool i2cThreadStop;
 
 /****************************************************************************************************************
                    Banner VARIABLES
@@ -897,7 +899,7 @@ static int32_t getSNTPTime(int16_t gmt_hr, int16_t gmt_min)
         UART_PRINT(" Device couldn't receive time information \n\r");
     }
 
-    if ((dataBuf[0] & 0x7) != 4)    /* expect only server response */
+    if (/*(dataBuf[0] & 0x7) != 4*/ false) /* expect only server response */
     {
         /* MODE is not server, abort */
         UART_PRINT(" Device is expecting response from server only!\n\r");
@@ -1190,6 +1192,19 @@ void mainThread(void * args)
             while (1);
         }
 
+        i2cThreadStop = false;
+        pthread_t i2cThread;
+        pthread_attr_t i2cThreadAttr;
+        pthread_attr_init(&i2cThreadAttr);
+        retc |= pthread_attr_setstacksize(&i2cThreadAttr, TASK_STACK_SIZE);
+        retc |= pthread_attr_setdetachstate(&i2cThreadAttr, PTHREAD_CREATE_DETACHED);
+        retc |= pthread_create(&i2cThread, &i2cThreadAttr, i2cThreadProc, NULL);
+        if (retc < 0)
+        {
+            UART_PRINT("UDP Server create failed\r\n");
+            while (1);
+        }
+
         rtc_init();
 
         retc = getTime();
@@ -1198,7 +1213,7 @@ void mainThread(void * args)
 
         rtc_set_time((time_t) App_CB.timeElapsedSec);
 
-        rtc_set_alarm(6, 19, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
+        rtc_set_alarm(41, 19, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
 
         while (App_CB.resetApplication == false)
         {
@@ -1208,11 +1223,14 @@ void mainThread(void * args)
         }
 
         udpThreadStop = true;
+        i2cThreadStop = true;
 
         rtc_free();
 
         //wait for server to stop
         pthread_join(udpServerThread, NULL);
+        //wait for i2c to stop
+        pthread_join(i2cThread, NULL);
     }
 }
 
@@ -1241,6 +1259,8 @@ extern void RTC_C_IRQHandler(uintptr_t Arg)
     {
         UART_PRINT("RTC Int: Alarm Triggered\r\n");
         //can set next alarm here
+        //do i2c stuff here (leds)
+        //do spi stuff here (screen)
         //rtc_set_alarm(22, 18, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
     }
 
