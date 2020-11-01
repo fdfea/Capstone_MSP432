@@ -42,57 +42,62 @@
 #include "Board.h"
 //#include "system_msp432p401r.c"
 
-extern void *mainThread(void *arg0);
+extern void *i2cThread(void *arg0);
 
+/* Stack size in bytes */
 #define THREADSTACKSIZE    4096
 
+/*
+ *  ======== main ========
+ */
 int main(void)
 {
-    pthread_t thread;
-    pthread_attr_t pAttrs;
-    struct sched_param priParam;
-    int retc;
-    int detachState;
+    pthread_t           thread;
+    pthread_attr_t      attrs;
+    struct sched_param  priParam;
+    int                 retc;
 
+    /* Call driver init functions */
     Board_initGeneral();
 
-    pthread_attr_init(&pAttrs);
+    /* Initialize the attributes structure with default values */
+    pthread_attr_init(&attrs);
+
+    /* Set priority, detach state, and stack size attributes */
     priParam.sched_priority = 1;
-
-    detachState = PTHREAD_CREATE_DETACHED;
-    retc = pthread_attr_setdetachstate(&pAttrs, detachState);
-    if(retc != 0)
-    {
-        while(1)
-        {
-            ;
-        }
+    retc = pthread_attr_setschedparam(&attrs, &priParam);
+    retc |= pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
+    retc |= pthread_attr_setstacksize(&attrs, THREADSTACKSIZE);
+    if (retc != 0) {
+        /* failed to set attributes */
+        while (1) {}
     }
 
-    pthread_attr_setschedparam(&pAttrs, &priParam);
+//    retc = pthread_create(&thread, &attrs, mainThread, NULL);
+//    if (retc != 0) {
+//        /* pthread_create() failed */
+//        while (1) {}
+//    }
 
-    retc |= pthread_attr_setstacksize(&pAttrs, THREADSTACKSIZE);
-    if(retc != 0)
-    {
-        while(1)
-        {
-            ;
-        }
+    /* Set priority, detach state, and stack size attributes */
+    priParam.sched_priority = 3;
+    retc = pthread_attr_setschedparam(&attrs, &priParam);
+    if (retc != 0) {
+        /* failed to set attributes */
+        while (1) {}
     }
 
-    retc = pthread_create(&thread, &pAttrs, mainThread, NULL);
-    if(retc != 0)
-    {
-        while(1)
-        {
-            ;
-        }
+    retc = pthread_create(&thread, &attrs, i2cThread, NULL);
+    if (retc != 0) {
+        /* pthread_create() failed */
+        while (1) {}
     }
 
     BIOS_start();
 
     return (0);
 }
+
 
 void dummyOutput(void)
 {
