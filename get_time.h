@@ -32,9 +32,13 @@
 
 /* Standard includes                                                          */
 #include <mqueue.h>
+#include <stdbool.h>
 
 /* TI-DRIVERS Header files */
 #include <ti/drivers/net/wifi/simplelink.h>
+
+/* Application includes */
+#include "SMO.h"
 
 /* Application Name and Version*/
 #define APPLICATION_NAME        "Get Time Wifi Demo"
@@ -72,7 +76,7 @@
 #define GMT_TIME_ZONE_MIN   00
 
 #define SECONDS_BEFORE_UNIX_EPOCH   2208988800
-#define TZ_EST_OFFSET_SECS          14400
+#define TZ_EST_OFFSET_SECS          18000
 
 /* Weather */
 #define MAX_SEND_BUF_SIZE   512

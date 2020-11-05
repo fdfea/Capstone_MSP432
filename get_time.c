@@ -56,12 +56,15 @@
 #include <mqueue.h>
 #include <time.h>
 #include <pthread.h>
+#include <errno.h>
 
 /* Simplelink includes                                                        */
 #include <ti/drivers/net/wifi/simplelink.h>
 
 /* Driverlib includes */
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+
+#include <ti/drivers/apps/Button.h>
 
 /* SlNetSock includes (to enable portability to other interfaces like ETH)    */
 #include <ti/drivers/net/wifi/slnetifwifi.h>
@@ -76,6 +79,7 @@
 #include "ustdlib.h"
 
 #include "rtc.h"
+#include "SMO.h"
 
 /* Weather */
 #define WEATHER_SERVER  "api.openweathermap.org"
@@ -104,8 +108,16 @@ void TimerPeriodicIntHandler(sigval val);
 void LedTimerConfigNStart();
 void LedTimerDeinitStop();
 void RTC_C_IRQHandler(uintptr_t Arg);
+
 static void *udpServerThreadProc(void *pArg);
 extern void *i2cThreadProc(void *arg0);
+
+static void SMO_handleTimeout(void);
+static void SMO_okayButtonHandler(Button_Handle handle, Button_EventMask events);
+
+static int SMO_scheduleNextEvent(SMO_Control *Ctrl, uint8_t Hour, uint8_t Min);
+static int SMO_handleEvent(SMO_Control *Ctrl);
+static void SMO_stopEvent(void);
 
 /****************************************************************************************************************
                    GLOBAL VARIABLES
@@ -157,8 +169,19 @@ uint8_t locTempString[400];
 uint8_t NumDaysReceived = 0;
 Tmp_Day_t Tmp_Day[5];
 
+//RTC calendar
+static volatile RTC_C_Calendar newTime;
+
+//booleans to notify threads to stop
 volatile bool udpThreadStop;
 volatile bool i2cThreadStop;
+
+//controller for smart medication organizer
+static SMO_Control SMO_Ctrl;
+static pthread_mutex_t SMO_Mutex;
+
+//handle for okay button
+static Button_Handle okayButtonHandle;
 
 /****************************************************************************************************************
                    Banner VARIABLES
@@ -169,8 +192,6 @@ char lineBreak[]                = "\n\r";
                  Local Functions
 ****************************************************************************************************************/
 int32_t WiFi_IF_Connect(void);
-
-//static void RTC_C_IRQHandler(uintptr_t arg);
 
 //*****************************************************************************
 //
@@ -1034,7 +1055,7 @@ static void *udpServerThreadProc(void* pArg)
     SlSocklen_t ServerSize, ClientSize;
     struct SlTimeval_t TimeVal;
     SlSockAddrIn_t ServerAddr, ClientAddr;
-    uint8_t dataBuf[48];
+    uint8_t dataBuf[255];
 
     sd = sl_Socket(SL_AF_INET, SL_SOCK_DGRAM, /*SL_IPPROTO_UDP*/ 0);
     if(sd < 0)
@@ -1072,10 +1093,74 @@ static void *udpServerThreadProc(void* pArg)
         if (retVal <= 0)
         {
             //UART_PRINT("Recieve timed out\n\r");
+            continue;
         }
-        else
+
+        UART_PRINT("Recieved %d bytes\r\n", retVal);
+
+        /*
+         * Expected SMO Data Packet Structure
+         * ======================================================
+         * 1 byte -- Medication Event packet header type (0x98)
+         * ------------------------------------------------------
+         * 1 byte -- how many Medication Events (1-6)
+         * ======================================================
+         * n * (35) bytes -- array of Medication Events
+         * ======================================================
+         * Medication Event Data Structure
+         * ======================================================
+         * 1 byte -- hour to take (0-23)
+         * ------------------------------------------------------
+         * 1 byte -- min to take (0-59)
+         * ------------------------------------------------------
+         * 1 byte -- how many to take (1-5)
+         * ------------------------------------------------------
+         * 1 byte -- which compartment (1-6)
+         * ------------------------------------------------------
+         * 1 byte -- length used by medication information
+         * ------------------------------------------------------
+         * 30 bytes (chars) -- medication information
+         * ======================================================
+         */
+        int Res = 0;
+
+        //check simple packet formatting
+        if (dataBuf[0] != SMO_PACKET_TYPE_HEADER)
         {
-            UART_PRINT("Recieved: %s\r\n", dataBuf);
+            UART_PRINT("Invalid packet type recieved\r\n");
+            continue;
+        }
+
+        uint8_t nMeds = dataBuf[1];
+        if (nMeds == 0 || nMeds > SMO_PACKET_MAX_MEDS)
+        {
+            UART_PRINT("Invalid number of meds recieved\r\n");
+            continue;
+        }
+
+        //copy received data into packet
+        SMO_Packet Pkt;
+        memcpy(&Pkt, dataBuf, SMO_PACKET_HEADER_SIZE + nMeds * sizeof(SMO_PacketMed));
+
+        newTime = MAP_RTC_C_getCalendarTime();
+
+        //configure SMO from user data
+        pthread_mutex_lock(&SMO_Mutex);
+        Res = SMO_Control_configure(&SMO_Ctrl, &Pkt);
+        pthread_mutex_unlock(&SMO_Mutex);
+        if (Res < 0)
+        {
+            UART_PRINT("Error configuring SMO\r\n");
+            continue;
+        }
+
+        //schedule first event
+        pthread_mutex_lock(&SMO_Mutex);
+        Res = SMO_scheduleNextEvent(&SMO_Ctrl, newTime.hours, newTime.minutes);
+        pthread_mutex_unlock(&SMO_Mutex);
+        if (Res < 0)
+        {
+            UART_PRINT("Error scheduling event\r\n");
         }
     }
 
@@ -1099,7 +1184,7 @@ void mainThread(void * args)
     pthread_attr_t pAttrs_spawn;
     struct sched_param priParam;
 
-    //pthread_mutex_t uartMutex;
+    Button_Params  buttonParams;
 
     /* Peripheral parameters and handles */
     UART_Handle tUartHndl;
@@ -1116,6 +1201,8 @@ void mainThread(void * args)
 
     /* Init pins used as GPIOs */
     GPIO_init();
+    /* Init buttons driver */
+    Button_init();
     /* Init SPI for communicating between M4 and NWP */
     SPI_init();
 
@@ -1123,6 +1210,15 @@ void mainThread(void * args)
     tUartHndl = InitTerm();
     /* remove uart receive from LPDS dependency                               */
     UART_control(tUartHndl, UART_CMD_RXDISABLE, NULL);
+
+
+    Button_Params_init(&buttonParams);
+    okayButtonHandle = Button_open(CONFIG_BUTTON_0, SMO_okayButtonHandler, &buttonParams);
+
+    if (okayButtonHandle == NULL)
+    {
+        UART_PRINT("Button open failed\r\n");
+    }
 
     /* Create the sl_Task                                                     */
     pthread_attr_init(&pAttrs_spawn);
@@ -1158,14 +1254,10 @@ void mainThread(void * args)
         while (1);
     }
 
-    /*
-    retc = pthread_mutex_init(&uartMutex, NULL);
-    if (retc < 0)
-    {
-        UART_PRINT("\r\n Mutex init failed \r\n");
-        while (1);
-    }
-    */
+    pthread_mutexattr_t Attr;
+    pthread_mutexattr_init(&Attr);
+    pthread_mutexattr_settype(&Attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&SMO_Mutex, &Attr);
 
     /* Main application loop */
     while (1)
@@ -1178,6 +1270,9 @@ void mainThread(void * args)
         /* Connect to AP */
         UART_PRINT("Using hardcoded profile for connection.\n\r");
         App_CB.apConnectionState = WiFi_IF_Connect();
+
+        RTC_init();
+        SMO_Control_init(&SMO_Ctrl);
 
         udpThreadStop = false;
         pthread_t udpServerThread;
@@ -1192,6 +1287,7 @@ void mainThread(void * args)
             while (1);
         }
 
+        /*
         i2cThreadStop = false;
         pthread_t i2cThread;
         pthread_attr_t i2cThreadAttr;
@@ -1201,23 +1297,71 @@ void mainThread(void * args)
         retc |= pthread_create(&i2cThread, &i2cThreadAttr, i2cThreadProc, NULL);
         if (retc < 0)
         {
-            UART_PRINT("UDP Server create failed\r\n");
+            UART_PRINT("i2c Thread create failed\r\n");
             while (1);
         }
-
-        rtc_init();
+        */
 
         retc = getTime();
 
         App_CB.timeElapsedSec -= TZ_EST_OFFSET_SECS;
 
-        rtc_set_time((time_t) App_CB.timeElapsedSec);
+        RTC_setTime((time_t) App_CB.timeElapsedSec);
 
-        rtc_set_alarm(41, 19, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
+        /*
+        SMO_Packet Pkt;
+        Pkt.PacketType = 98;
+        Pkt.nMeds = 3;
+        {
+            SMO_PacketMed Med1;
+            Med1.AlarmHour = 17;
+            Med1.AlarmMin = 39;
+            Med1.nCmptmt = 1;
+            Med1.nPills = 2;
+            Med1.Length = 10;
+            memcpy(Med1.Payload, "Medicine1", Med1.Length);
+
+            SMO_PacketMed Med2;
+            Med2.AlarmHour = 17;
+            Med2.AlarmMin = 45;
+            Med2.nCmptmt = 2;
+            Med2.nPills = 1;
+            Med2.Length = 10;
+            memcpy(Med2.Payload, "Medicine2", Med2.Length);
+
+            SMO_PacketMed Med3;
+            Med3.AlarmHour = 17;
+            Med3.AlarmMin = 42;
+            Med3.nCmptmt = 3;
+            Med3.nPills = 1;
+            Med3.Length = 10;
+            memcpy(Med3.Payload, "Medicine3", Med3.Length);
+
+            Pkt.Meds[0] = Med1;
+            Pkt.Meds[1] = Med2;
+            Pkt.Meds[2] = Med3;
+        }
+
+        pthread_mutex_lock(&SMO_Mutex);
+        retc = SMO_Control_configure(&SMO_Ctrl, &Pkt);
+        pthread_mutex_unlock(&SMO_Mutex);
+        if (retc < 0)
+        {
+            UART_PRINT("Error configuring SMO\r\n");
+        }
+
+        pthread_mutex_lock(&SMO_Mutex);
+        retc = SMO_scheduleNextEvent(&SMO_Ctrl, newTime.hours, newTime.minutes);
+        pthread_mutex_unlock(&SMO_Mutex);
+        if (retc < 0)
+        {
+            UART_PRINT("Error scheduling event\r\n");
+        }
+        */
 
         while (App_CB.resetApplication == false)
         {
-            UART_PRINT("Date: %s\r\n", rtc_get_date());
+            UART_PRINT("Date: %s\r\n", RTC_getDate());
 
             sleep(10);
         }
@@ -1225,13 +1369,16 @@ void mainThread(void * args)
         udpThreadStop = true;
         i2cThreadStop = true;
 
-        rtc_free();
-
         //wait for server to stop
         pthread_join(udpServerThread, NULL);
         //wait for i2c to stop
+        /*
         pthread_join(i2cThread, NULL);
+        */
     }
+
+    //SMO_Control_free(&SMO_Ctrl);
+    //RTC_free();
 }
 
 /*
@@ -1244,6 +1391,8 @@ extern void RTC_C_IRQHandler(uintptr_t Arg)
     status = MAP_RTC_C_getEnabledInterruptStatus();
     MAP_RTC_C_clearInterruptFlag(status);
 
+    newTime = MAP_RTC_C_getCalendarTime();
+
     if (status & RTC_C_CLOCK_READ_READY_INTERRUPT)
     {
 
@@ -1253,17 +1402,161 @@ extern void RTC_C_IRQHandler(uintptr_t Arg)
     {
         UART_PRINT("RTC Int: Minute Passed\r\n");
 
+        //update screen time display every minute
+        //Screen_updateTime(newTime.minutes, newTime.hours);
+
+        pthread_mutex_lock(&SMO_Mutex);
+        if (SMO_Ctrl.Timer.Timing)
+        {
+            SMO_Ctrl.Timer.Count++;
+            if (SMO_Ctrl.Timer.Count == SMO_EVENT_TIMEOUT_MINS)
+            {
+                SMO_Timer_stop(&SMO_Ctrl.Timer);
+                SMO_handleTimeout();
+            }
+        }
+        pthread_mutex_unlock(&SMO_Mutex);
     }
 
     if (status & RTC_C_CLOCK_ALARM_INTERRUPT)
     {
+        int Res = 0;
         UART_PRINT("RTC Int: Alarm Triggered\r\n");
-        //can set next alarm here
-        //do i2c stuff here (leds)
-        //do spi stuff here (screen)
-        //rtc_set_alarm(22, 18, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
+
+        pthread_mutex_lock(&SMO_Mutex);
+        if (SMO_Ctrl.Timer.Timing)
+        {
+            SMO_Timer_stop(&SMO_Ctrl.Timer);
+            SMO_stopEvent();
+        }
+        Res = SMO_handleEvent(&SMO_Ctrl);
+        pthread_mutex_unlock(&SMO_Mutex);
+        if (Res < 0)
+        {
+            UART_PRINT("Error handling event\r\n");
+        }
+        else
+        {
+            pthread_mutex_lock(&SMO_Mutex);
+            SMO_Timer_start(&SMO_Ctrl.Timer);
+            pthread_mutex_unlock(&SMO_Mutex);
+        }
+
+        pthread_mutex_lock(&SMO_Mutex);
+        Res = SMO_scheduleNextEvent(&SMO_Ctrl, newTime.hours, newTime.minutes);
+        pthread_mutex_unlock(&SMO_Mutex);
+        if (Res < 0)
+        {
+            UART_PRINT("Error scheduling next event\r\n");
+        }
+    }
+}
+
+static void SMO_okayButtonHandler(Button_Handle handle, Button_EventMask events)
+{
+    if (Button_EV_CLICKED == (events & Button_EV_CLICKED))
+    {
+        UART_PRINT("Okay button clicked\r\n");
+        pthread_mutex_lock(&SMO_Mutex);
+        //user presses button to acknowledge event
+        if (SMO_Ctrl.Timer.Timing)
+        {
+            SMO_Timer_stop(&SMO_Ctrl.Timer);
+            SMO_stopEvent();
+        }
+        pthread_mutex_lock(&SMO_Mutex);
+    }
+}
+
+static void SMO_handleTimeout(void)
+{
+    UART_PRINT("Event timer timed out\r\n");
+    //when timer goes off, stop peripherals
+    SMO_stopEvent();
+}
+
+static void SMO_stopEvent(void)
+{
+    UART_PRINT("Stopping SMO event\r\n");
+    //stop LEDs
+    //LED_allOff();
+
+    //remove med info from screen
+    //Screen_removeMedInfo();
+
+    //turn off speaker
+    //Speaker_off();
+}
+
+static int SMO_scheduleNextEvent(SMO_Control *Ctrl, uint8_t Hour, uint8_t Min)
+{
+    int Res = 0;
+
+    SMO_Event *NextEvent = SMO_Control_nextEvent(Ctrl, Hour, Min);
+    if (NextEvent == NULL)
+    {
+        UART_PRINT("No event available\r\n");
+        Res = -EINVAL;
+        goto Error;
     }
 
+    UART_PRINT("Scheduling next event for %d:%d\r\n", NextEvent->AlarmHour, NextEvent->AlarmMin);
+    //set an alarm for the next event
+    RTC_setAlarm(NextEvent->AlarmMin, NextEvent->AlarmHour, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
+
+    //save the event so we know what to do when alarm triggers
+    Ctrl->CurrentEvent = NextEvent;
+
+Error:
+    return Res;
+}
+
+static int SMO_handleEvent(SMO_Control *Ctrl)
+{
+    int Res = 0;
+    char ScreenStr[255];
+    char *BeginStr = &ScreenStr[0], *CurrentStr = &ScreenStr[0], *MedStr = NULL;
+    uint8_t Tmp, Index, Compartments = Ctrl->CurrentEvent->Compartments;
+
+    if (Ctrl->CurrentEvent == NULL)
+    {
+        UART_PRINT("No event ready\r\n");
+        Res = -EINVAL;
+        goto Error;
+    }
+
+    UART_PRINT("Starting SMO event\r\n");
+
+    while (Compartments != 0ULL)
+    {
+        Tmp = Compartments & -Compartments;
+        Index = 31 - __CLZ(Tmp);
+
+        //handle LEDs
+        UART_PRINT("Lighting LED %d\r\n", Index);
+        //LED_on(Index);
+
+        //add med info to screen string
+        MedStr = SMO_Control_getMedStr(Ctrl, Index);
+        if (MedStr != NULL)
+        {
+            CurrentStr += sprintf(CurrentStr, "%s, Cmptmt: %d, Pills: %d\r\n",
+                                  MedStr, Index, Ctrl->CurrentEvent->nPills[Index]);
+        }
+
+        Compartments ^= Tmp;
+    }
+
+    //display med info
+    UART_PRINT("Displaying on screen:\r\n%s", BeginStr);
+    //Screen_printMedInfo(ScreenStr);
+
+    //turn on speaker
+    UART_PRINT("Turning speaker on\r\n");
+    //Speaker_on();
+
+Error:
+    return Res;
 }
 
 //*****************************************************************************

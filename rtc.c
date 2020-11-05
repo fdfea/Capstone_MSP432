@@ -5,7 +5,7 @@
 
 #include "rtc.h"
 
-void rtc_init(void)
+void RTC_init(void)
 {
     MAP_WDT_A_holdTimer();
 
@@ -45,29 +45,29 @@ void rtc_init(void)
     MAP_RTC_C_startClock();
 }
 
-void rtc_free(void)
+void RTC_free(void)
 {
     Hwi_delete(&RTC_Ctrl.RtcHwi);
 }
 
-void rtc_set_time(time_t Seconds)
+void RTC_setTime(time_t Seconds)
 {
     Seconds_set((UInt32) Seconds);
 }
 
-time_t rtc_get_time(void)
+time_t RTC_getTime(void)
 {
     return (time_t) Seconds_get();
 }
 
-char *rtc_get_date(void)
+char *RTC_getDate(void)
 {
-    time_t secs = rtc_get_time();
+    time_t secs = RTC_getTime();
     char *pDate = ctime(&secs);
     return pDate;
 }
 
-void rtc_set_alarm(uint_fast8_t Minutes,
+void RTC_setAlarm(uint_fast8_t Minutes,
                    uint_fast8_t Hours,
                    uint_fast8_t DoW,
                    uint_fast8_t DoM)

@@ -42,6 +42,7 @@
 
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerMSP432.h>
+#include <ti/drivers/apps/Button.h>
 
 #include <ti/devices/msp432p4xx/inc/msp.h>
 #include <ti/devices/msp432p4xx/driverlib/rom.h>
@@ -336,6 +337,29 @@ GPIO_PinConfig gpioPinConfigs[] = {
     /* MSP_EXP432P401R_CS_pin */
     GPIOMSP432_P3_0 | GPIO_CFG_OUT_STD | GPIO_CFG_OUT_STR_HIGH |
     GPIO_CFG_OUT_HIGH,
+};
+
+const uint_least8_t Button_count = 2;
+
+Button_Object Button_object[2];
+const  Button_HWAttrs Button_hwAttrs[2] = {
+    {
+        .gpioIndex = CONFIG_S1,
+    },
+    {
+        .gpioIndex = CONFIG_S2,
+    }
+};
+
+const Button_Config Button_config[2] = {
+    {
+        .hwAttrs = &Button_hwAttrs[0],
+        .object =  &Button_object[0],
+    },
+    {
+        .hwAttrs = &Button_hwAttrs[1],
+        .object =  &Button_object[1],
+    },
 };
 
 /*

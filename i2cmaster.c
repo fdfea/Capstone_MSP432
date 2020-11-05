@@ -48,8 +48,6 @@ uint8_t rxBuffer[32];
 
 extern volatile bool i2cThreadStop;
 
-
-
 void LED_Init(I2C_Handle i2c){
     bool            retVal = false;
     I2C_Transaction i2cTransaction;

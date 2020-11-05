@@ -53,6 +53,12 @@ extern "C" {
 #define MSP_EXP432P401R_GPIO_LED_OFF (0)
 #define MSP_EXP432P401R_GPIO_LED_ON  (1)
 
+#define CONFIG_BUTTON_0     0  //Button number 1
+#define CONFIG_BUTTON_1     1  //Button number 2
+
+#define CONFIG_S1       0
+#define CONFIG_S2       1
+
 /*!
  *  @def    MSP_EXP432P401R_ADCName
  *  @brief  Enum of ADC channels on the MSP_EXP432P401R dev board
