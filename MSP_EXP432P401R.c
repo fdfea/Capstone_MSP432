@@ -648,6 +648,21 @@ const SPIMSP432DMA_HWAttrsV1 spiMSP432DMAHWAttrs[MSP_EXP432P401R_SPICOUNT] = {
         .somiPin = SPIMSP432DMA_P3_7_UCB2SOMI,
         .stePin = SPIMSP432DMA_P2_4_UCB2STE,
         .pinMode = EUSCI_SPI_4PIN_UCxSTE_ACTIVE_LOW
+    },
+    {
+        .baseAddr = EUSCI_A3_BASE,
+        .bitOrder = EUSCI_A_SPI_MSB_FIRST,
+        .clockSource = EUSCI_A_SPI_CLOCKSOURCE_SMCLK,
+        .defaultTxBufValue = 0,
+        .intPriority = (~0),
+        .dmaIntNum = INT_DMA_INT0,
+        .rxDMAChannelIndex = DMA_CH7_EUSCIA3RX,
+        .txDMAChannelIndex = DMA_CH6_EUSCIA3TX,
+        .pinMode =  EUSCI_SPI_4PIN_UCxSTE_ACTIVE_LOW,
+        .clkPin  = SPIMSP432DMA_P9_5_UCA3CLK,
+        .simoPin = SPIMSP432DMA_P9_7_UCA3SIMO,
+        .somiPin = SPIMSP432DMA_P9_6_UCA3SOMI,
+        .stePin  = SPIMSP432DMA_P9_4_UCA3STE
     }
 };
 
@@ -671,6 +686,11 @@ const SPI_Config SPI_config[MSP_EXP432P401R_SPICOUNT] = {
         .fxnTablePtr = &SPIMSP432DMA_fxnTable,
         .object = &spiMSP432DMAObjects[MSP_EXP432P401R_SPIB4],
         .hwAttrs = &spiMSP432DMAHWAttrs[MSP_EXP432P401R_SPIB4]
+    },
+    {
+        .fxnTablePtr = &SPIMSP432DMA_fxnTable,
+        .object = &spiMSP432DMAObjects[MSP_EXP432P401R_SPIA3],
+        .hwAttrs = &spiMSP432DMAHWAttrs[MSP_EXP432P401R_SPIA3]
     }
 };
 

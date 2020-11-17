@@ -77,7 +77,7 @@ void LedTimerDeinitStop();
 void RTC_C_IRQHandler(uintptr_t Arg);
 
 static void *udpServerThreadProc(void *pArg);
-extern void *i2cThreadProc(void *arg0);
+extern void *peripheralThreadProc(void *arg0);
 
 static void SMO_handleTimeout(void);
 static void SMO_okayButtonHandler(Button_Handle handle, Button_EventMask events);
@@ -111,7 +111,7 @@ static volatile RTC_C_Calendar newTime;
 
 //booleans to notify threads to stop
 volatile bool udpThreadStop;
-volatile bool i2cThreadStop;
+volatile bool peripheralThreadStop;
 
 //controller for smart medication organizer
 static SMO_Control SMO_Ctrl;
@@ -658,6 +658,23 @@ void mainThread(void * args)
 {
     int32_t retc = 0;
 
+    /* Initialize screen to display load screen */
+    Screen_init();
+
+    /* This can be moved */
+    peripheralThreadStop = false;
+    pthread_t peripheralThread;
+    pthread_attr_t peripheralThreadAttr;
+    pthread_attr_init(&peripheralThreadAttr);
+    retc |= pthread_attr_setstacksize(&peripheralThreadAttr, TASK_STACK_SIZE);
+    retc |= pthread_attr_setdetachstate(&peripheralThreadAttr, PTHREAD_CREATE_DETACHED);
+    retc |= pthread_create(&peripheralThread, &peripheralThreadAttr, peripheralThreadProc, NULL);
+    if (retc < 0)
+    {
+        UART_PRINT("peripheral Thread create failed\r\n");
+        while (1);
+    }
+
     /* Thread vars */
     pthread_t spawn_thread = (pthread_t) NULL;
     pthread_attr_t pAttrs_spawn;
@@ -710,27 +727,27 @@ void mainThread(void * args)
     if (retc != 0)
     {
         UART_PRINT("could not create simplelink task\n\r");
-        while (1); // Insert error handling
+        //while (1); // Insert error handling
     }
 
     /* Started to allow host to read back MAC address when printing App banner */
-    retc = sl_Start(0, 0, 0);
+    //retc = sl_Start(0, 0, 0);
     if (retc < 0)
     {
         /* Handle Error */
         UART_PRINT("\n sl_Start failed\n");
-        while (1);// Insert error handling
+        //while (1);// Insert error handling
     }
 
     /* Output device information to the UART terminal                         */
     retc = DisplayAppBanner(APPLICATION_NAME, APPLICATION_VERSION);
 
-    retc = sl_Stop(SL_STOP_TIMEOUT);
+    //retc = sl_Stop(SL_STOP_TIMEOUT);
     if (retc < 0)
     {
         /* Handle Error */
         UART_PRINT("\n sl_Stop failed\n");
-        while (1);
+        //while (1);
     }
 
     pthread_mutexattr_t Attr;
@@ -765,21 +782,6 @@ void mainThread(void * args)
             UART_PRINT("UDP Server create failed\r\n");
             while (1);
         }
-
-        /*
-        i2cThreadStop = false;
-        pthread_t i2cThread;
-        pthread_attr_t i2cThreadAttr;
-        pthread_attr_init(&i2cThreadAttr);
-        retc |= pthread_attr_setstacksize(&i2cThreadAttr, TASK_STACK_SIZE);
-        retc |= pthread_attr_setdetachstate(&i2cThreadAttr, PTHREAD_CREATE_DETACHED);
-        retc |= pthread_create(&i2cThread, &i2cThreadAttr, i2cThreadProc, NULL);
-        if (retc < 0)
-        {
-            UART_PRINT("i2c Thread create failed\r\n");
-            while (1);
-        }
-        */
 
         retc = getTime();
 
@@ -903,13 +905,13 @@ void mainThread(void * args)
         }
 
         udpThreadStop = true;
-        i2cThreadStop = true;
+        peripheralThreadStop = true;
 
         //wait for server to stop
         pthread_join(udpServerThread, NULL);
-        //wait for i2c to stop
+        //wait for peripherals to stop
         /*
-        pthread_join(i2cThread, NULL);
+        pthread_join(peripheralThread, NULL);
         */
     }
 

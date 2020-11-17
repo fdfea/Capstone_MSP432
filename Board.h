@@ -88,6 +88,7 @@ extern "C" {
 #define Board_SPI1                  MSP_EXP432P401R_SPIB2
 #define Board_SPI2                  MSP_EXP432P401R_SPIB3
 #define Board_SPI3                  MSP_EXP432P401R_SPIB4
+#define Board_SPI4                  MSP_EXP432P401R_SPIA3
 #define Board_SPI_CS1               MSP_EXP432P401R_SPI_CS1
 #define Board_SPI_CS2               MSP_EXP432P401R_SPI_CS2
 
