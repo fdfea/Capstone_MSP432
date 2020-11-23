@@ -29,22 +29,6 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- 
- /*****************************************************************************
-
- Application Name     -   Get Time and Weather Demo
- Application Overview -   
- 
- Application Details  - 
- 
- *****************************************************************************/
- 
-//*****************************************************************************
-//
-//! \addtogroup get_time_and_weather
-//! @{
-//
-//*****************************************************************************
 
 /* Standard includes                                                          */
 #include <get_time.h>
@@ -63,6 +47,7 @@
 
 /* Driverlib includes */
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+#include <ti/devices/msp432p4xx/driverlib/aes256.h>
 
 #include <ti/drivers/apps/Button.h>
 
@@ -80,24 +65,6 @@
 
 #include "rtc.h"
 #include "SMO.h"
-
-/* Weather */
-#define WEATHER_SERVER  "api.openweathermap.org"
-#define PREFIX_BUFFER   "GET /data/2.5/forecast?q="
-#ifdef IMPERIAL
-#define POST_BUFFER     "&mode=xml&units=imperial&APPID=62c0faaec06406fd96cb58cfac0ca642\r\n HTTP/1.1\r\nHost:api.openweathermap.org\r\nAccept: */"
-#else
-#define POST_BUFFER     "&mode=xml&units=metric&APPID=62c0faaec06406fd96cb58cfac0ca642\r\n HTTP/1.1\r\nHost:api.openweathermap.org\r\nAccept: */"
-#endif
-#define POST_BUFFER2    "*\r\n\r\n"
-
-//***** Definitions *****
-#define TIMEOUT_SEC     2
-#define TIMEOUT_USEC    0
-#define DATA_PORT       5004
-
-/* Expiration value for the timer that is being used to toggle the Led.       */
-#define TIMER_EXPIRATION_VALUE   100 * 1000000
 
 //*****************************************************************************
 //                      LOCAL FUNCTION PROTOTYPES
@@ -133,41 +100,11 @@ demo_Config_t       flashDemoConfigParams = { "cc3120-demo",
 
 pthread_t gProvisioningThread   = (pthread_t) NULL;
 
-/* AP Security Parameters                                                     */
+/* AP Security Parameters */
 SlWlanSecParams_t SecurityParams = { 0 };
 
 /* Date and Time Parameters */
 const uint8_t SNTPserver[30] = "time-c.nist.gov";
-
-/* Tuesday is the 1st day in 2013 - the relative year */
-const uint8_t daysOfWeek2013[7][3] = {{"Tue"},
-                                   {"Wed"},
-                                   {"Thu"},
-                                   {"Fri"},
-                                   {"Sat"},
-                                   {"Sun"},
-                                   {"Mon"}};
-
-const uint8_t monthOfYear[12][3] = {{"Jan"},
-                                 {"Feb"},
-                                 {"Mar"},
-                                 {"Apr"},
-                                 {"May"},
-                                 {"Jun"},
-                                 {"Jul"},
-                                 {"Aug"},
-                                 {"Sep"},
-                                 {"Oct"},
-                                 {"Nov"},
-                                 {"Dec"}};
-
-const uint8_t numOfDaysPerMonth[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
-
-const uint8_t digits[] = "0123456789";
-
-uint8_t locTempString[400];
-uint8_t NumDaysReceived = 0;
-Tmp_Day_t Tmp_Day[5];
 
 //RTC calendar
 static volatile RTC_C_Calendar newTime;
@@ -183,6 +120,33 @@ static pthread_mutex_t SMO_Mutex;
 //handle for okay button
 static Button_Handle okayButtonHandle;
 
+/* AES256 Key
+ * pass=6OhmsApart
+ * salt=A391991F9584AA9D
+ * key=B385BB330C98AA5DFA026E2BE378BA53AFDFAFBEA5055D52C55CCECE6C1E8447
+ * iv=A874759E213BD6B8FC3023FE9B1B7E57
+ */
+static const uint8_t AesKey256[32] = {
+    0xB3, 0x85, 0xBB, 0x33, 0x0C, 0x98, 0xAA, 0x5D,
+    0xFA, 0x02, 0x6E, 0x2B, 0xE3, 0x78, 0xBA, 0x53,
+    0xAF, 0xDF, 0xAF, 0xBE, 0xA5, 0x05, 0x5D, 0x52,
+    0xC5, 0x5C, 0xCE, 0xCE, 0x6C, 0x1E, 0x84, 0x47
+};
+
+//buffer to hold decrypted SMO_Packet
+static uint8_t DataAESdecrypted[16][AES256_BLOCKSIZE];
+
+/*
+const uint8_t EncryptedPacket[3][AES256_BLOCKSIZE] = {
+    { 0x59, 0x3e, 0x48, 0x1d, 0x72, 0xd8, 0xe0, 0x3f,
+      0xfc, 0xce, 0x56, 0xff, 0xba, 0x3a, 0x9c, 0xcd },
+    { 0xa5, 0xfd, 0xb8, 0xcb, 0x34, 0x71, 0x17, 0x0a,
+      0x83, 0x84, 0x72, 0xb4, 0xf5, 0xee, 0x28, 0xc9 },
+    { 0x02, 0xef, 0xea, 0x7f, 0x1d, 0x69, 0xef, 0xaa,
+      0x74, 0x87, 0x3d, 0xab, 0x69, 0xa9, 0x6f, 0xad }
+};
+*/
+
 /****************************************************************************************************************
                    Banner VARIABLES
 ****************************************************************************************************************/
@@ -195,13 +159,9 @@ int32_t WiFi_IF_Connect(void);
 
 //*****************************************************************************
 //
-//! Push Button Handler1(GPIOSW2). Press push button1 (GPIOSW2) Whenever user
-//! wants to publish a message. Write message into message queue signaling the
-//! event publish messages
-//!
-//! \param none
-//!
-//! return none
+// Push Button Handler1(GPIOSW2). Press push button1 (GPIOSW2) Whenever user
+// wants to publish a message. Write message into message queue signaling the
+// event publish messages
 //
 //*****************************************************************************
 void pushButtonInterruptHandler2(uint_least8_t index)
@@ -212,13 +172,9 @@ void pushButtonInterruptHandler2(uint_least8_t index)
 
 //*****************************************************************************
 //
-//! Push Button Handler2(GPIOSW3). Press push button3 Whenever user wants to
-//! disconnect from the remote broker. Write message into message queue
-//! indicating disconnect from broker.
-//!
-//! \param none
-//!
-//! return none
+// Push Button Handler2(GPIOSW3). Press push button3 Whenever user wants to
+// disconnect from the remote broker. Write message into message queue
+// indicating disconnect from broker.
 //
 //*****************************************************************************
 void pushButtonInterruptHandler3(uint_least8_t index)
@@ -229,12 +185,8 @@ void pushButtonInterruptHandler3(uint_least8_t index)
 
 //*****************************************************************************
 //
-//! Application Boarders display on UART
-//!
-//! \param  ch - Character to be displayed , n - number of time to display
-//!
-//! \return none
-//!
+// Application Boarders display on UART
+//
 //*****************************************************************************
 void printBorder(char ch, int n)
 {
@@ -243,72 +195,9 @@ void printBorder(char ch, int n)
     for(i=0; i<n; i++)    putch(ch);
 }
 
-/***********************************************************
-  Function: itoa
-*/
-static uint16_t itoa(int16_t cNum, uint8_t *cString)
-{
-    uint16_t length = 0;
-    uint8_t* ptr = NULL;
-    int16_t uTemp = cNum;
-
-    /* value 0 is a special case */
-    if (cNum == 0)
-    {
-        length = 1;
-        *cString = '0';
-
-        return length;
-    }
-
-    /* Find out the length of the number, in decimal base */
-    length = 0;
-    while (uTemp > 0)
-    {
-        uTemp /= 10;
-        length++;
-    }
-
-    /* Do the actual formatting, right to left */
-    uTemp = cNum;
-    ptr = cString + length;
-    while (uTemp > 0)
-    {
-        --ptr;
-        *ptr = digits[uTemp % 10];
-        uTemp /= 10;
-    }
-
-    return length;
-}
-
 //*****************************************************************************
 //
-//! \brief This function reboot the M4 host processor
-//!
-//! \param[in]  none
-//!
-//! \return none
-//!
-////****************************************************************************
-//void mcuReboot(void)
-//{
-//    /* stop network processor activities before reseting the MCU */
-//    sl_Stop(SL_STOP_TIMEOUT );
-//
-//    UART_PRINT("[Common] CC3220 MCU reset request\r\n");
-//
-//    /* Reset the MCU in order to test the bundle */
-//    PRCMHibernateCycleTrigger();
-//}
-
-//*****************************************************************************
-//
-//! Periodic Timer Interrupt Handler
-//!
-//! \param None
-//!
-//! \return None
+// Periodic Timer Interrupt Handler
 //
 //*****************************************************************************
 void TimerPeriodicIntHandler(sigval val)
@@ -330,12 +219,8 @@ void TimerPeriodicIntHandler(sigval val)
 
 //*****************************************************************************
 //
-//! Function to configure and start timer to blink the LED while device is
-//! trying to connect to an AP
-//!
-//! \param none
-//!
-//! return none
+// Function to configure and start timer to blink the LED while device is
+// trying to connect to an AP
 //
 //*****************************************************************************
 void LedTimerConfigNStart()
@@ -359,11 +244,7 @@ void LedTimerConfigNStart()
 
 //*****************************************************************************
 //
-//! Disable the LED blinking Timer as Device is connected to AP
-//!
-//! \param none
-//!
-//! return none
+// Disable the LED blinking Timer as Device is connected to AP
 //
 //*****************************************************************************
 void LedTimerDeinitStop()
@@ -374,12 +255,8 @@ void LedTimerDeinitStop()
 
 //*****************************************************************************
 //
-//! Application startup display on UART
-//!
-//! \param  none
-//!
-//! \return none
-//!
+// Application startup display on UART
+//
 //*****************************************************************************
 int32_t DisplayAppBanner(char* appName, char* appVersion)
 {
@@ -443,15 +320,11 @@ int32_t DisplayAppBanner(char* appName, char* appVersion)
 
 //*****************************************************************************
 //
-//! This function connect the MQTT device to an AP with the SSID which was
-//! configured in SSID_NAME definition which can be found in Network_if.h file,
-//! if the device can't connect to to this AP a request from the user for other
-//! SSID will appear.
-//!
-//! \param  none
-//!
-//! \return None
-//!
+// This function connect the MQTT device to an AP with the SSID which was
+// configured in SSID_NAME definition which can be found in Network_if.h file,
+// if the device can't connect to to this AP a request from the user for other
+// SSID will appear.
+//
 //*****************************************************************************
 int32_t WiFi_IF_Connect()
 {
@@ -518,26 +391,6 @@ int32_t WiFi_IF_Connect()
     return 0;
 }
 
-/***********************************************************
-  Function: getHostIPforWeather
-*/
-static int32_t getHostIPforWeather(void)
-{
-    int32_t status = -1;
-
-    /* Receive IP for host based on the address */
-    status = sl_NetAppDnsGetHostByName((signed char *)App_CB.weatherHostName,
-                                       strlen((const char*)App_CB.weatherHostName),
-                                       (unsigned long*)&App_CB.weatherDestinationIP,
-                                       SL_AF_INET);
-    ASSERT_ON_ERROR(status);
-
-    return 0;
-}
-
-/***********************************************************
-  Function: getHostIPforDate
-*/
 static int32_t getHostIPforDate(void)
 {
     int32_t status = -1;
@@ -553,46 +406,6 @@ static int32_t getHostIPforDate(void)
     return 0;
 }
 
-/***********************************************************
-  Function: createConnectionforWeather
-*/
-static int32_t createConnectionforWeather(void)
-{
-    SlSockAddrIn_t  Addr;
-
-    int16_t sd = 0;
-    int16_t AddrSize = 0;
-    int32_t ret_val = 0;
-
-    Addr.sin_family = SL_AF_INET;
-    Addr.sin_port = sl_Htons(80);
-
-    /* Change the DestinationIP endianity, to big endian */
-    Addr.sin_addr.s_addr = sl_Htonl(App_CB.weatherDestinationIP);
-
-    AddrSize = sizeof(SlSockAddrIn_t);
-
-    sd = sl_Socket(SL_AF_INET,SL_SOCK_STREAM, 0);
-    if( sd < 0 )
-    {
-        UART_PRINT(" Error creating socket\n\r\n\r");
-        ASSERT_ON_ERROR(sd);
-    }
-
-    ret_val = sl_Connect(sd, ( SlSockAddr_t *)&Addr, AddrSize);
-    if( ret_val < 0 )
-    {
-        /* error */
-        UART_PRINT(" Error connecting to server\n\r\n\r");
-        ASSERT_ON_ERROR(ret_val);
-    }
-
-    return sd;
-}
-
-/***********************************************************
-  Function: createConnectionforDate
-*/
 static int32_t createConnectionforDate(void)
 {
     int32_t sd = 0;
@@ -612,269 +425,8 @@ static int32_t createConnectionforDate(void)
     return sd;
 }
 
-/***********************************************************
-  Function: getForecastData
-*/
-static int32_t getForecastData(void)
-{
-    uint8_t *p_startPtr = NULL;
-    uint8_t *p_endPtr = NULL;
-    uint8_t* p_bufLocation = NULL;
-    uint8_t  temp_endValue;
-    int32_t  retVal = -1;
-    int8_t   newDay = 1;
-    uint8_t  msgIndex;
-    uint16_t dataIndex;
-    uint16_t recvBuffoffset;
-
-    UART_PRINT("Start getforecastdata\n\r");
-    memset(App_CB.weatherRecvbuff, 0, sizeof(App_CB.weatherRecvbuff));
-
-    /* Puts together the HTTP GET string. */
-    p_bufLocation = App_CB.weatherSendBuff;
-    strcpy((char *)p_bufLocation, PREFIX_BUFFER);
-
-    p_bufLocation += strlen(PREFIX_BUFFER);
-    strcpy((char *)p_bufLocation, (const char *)App_CB.weatherCityName);
-
-    p_bufLocation += strlen((const char *)App_CB.weatherCityName);
-    strcpy((char *)p_bufLocation, POST_BUFFER);
-
-    p_bufLocation += strlen(POST_BUFFER);
-    strcpy((char *)p_bufLocation, POST_BUFFER2);
-
-    /* Send the HTTP GET string to the open TCP/IP socket. */
-    retVal = sl_Send(App_CB.weatherSockID, App_CB.weatherSendBuff,
-                     strlen((const char *)App_CB.weatherSendBuff), 0);
-
-    UART_PRINT("strlen: %d \n\r", strlen((const char *)App_CB.weatherSendBuff));
-    UART_PRINT("retval: %d \n\r", retVal);
-
-    if(retVal != strlen((const char *)App_CB.weatherSendBuff))
-        ASSERT_ON_ERROR(retVal);
-
-    /* Receive response */
-    for (msgIndex = 0; msgIndex < 18; msgIndex++)
-    {
-        retVal = sl_Recv(App_CB.weatherSockID,
-                         App_CB.weatherRecvbuff,
-                         1000, 0);
-        ASSERT_ON_ERROR(retVal);
-
-        /* Remove unwanted characters */
-        for (dataIndex = 0; dataIndex < MAX_SEND_RCV_SIZE; dataIndex++)
-        {
-            if (App_CB.weatherRecvbuff[dataIndex] == 0)
-            {
-                App_CB.weatherRecvbuff[dataIndex] = '0';
-            }
-        }
-        App_CB.weatherRecvbuff[dataIndex] = '\0';
-
-        recvBuffoffset = 0;
-
-        if(NumDaysReceived < 5)
-        {
-            /* Get the date and temp string */
-            p_startPtr = (uint8_t *)strstr((const char *)&App_CB.weatherRecvbuff[recvBuffoffset],
-                                           "time from=");
-            if( NULL != p_startPtr )
-            {
-                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "/temperature>");
-                if( NULL != p_endPtr )
-                {
-                    recvBuffoffset = p_endPtr - &App_CB.weatherRecvbuff[0];
-                    temp_endValue = *p_endPtr;
-                    *p_endPtr = 0;
-                    usprintf((char *)locTempString,"%s",p_startPtr);
-                    *p_endPtr = temp_endValue;
-
-                    /* Parse the data */
-                    p_startPtr = (uint8_t *)strstr((const char *)locTempString, "time from=");
-                    p_startPtr = p_startPtr + strlen("time from=") + 1;
-                    p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "T");
-                    if( NULL != p_endPtr )
-                    {
-                        temp_endValue = *p_endPtr;
-                        *p_endPtr = 0;
-                        usprintf((char *)Tmp_Day[NumDaysReceived].TmpDate,"%s",
-                                 p_startPtr);
-                        *p_endPtr = temp_endValue;
-
-                        if (NumDaysReceived > 0)
-                        {
-                            newDay = ustrcmp((const char *)Tmp_Day[NumDaysReceived-1].TmpDate,
-                                             (const char *)Tmp_Day[NumDaysReceived].TmpDate);
-                        }
-
-                        if (newDay != 0)
-                        {
-                            p_startPtr = (uint8_t *)strstr((const char *)locTempString, "ial\" value=");
-                            if( NULL != p_startPtr )
-                            {
-                                p_startPtr = p_startPtr + strlen("ial\" value=") + 1;
-                                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "\"");
-                                if( NULL != p_endPtr )
-                                {
-                                    temp_endValue = *p_endPtr;
-                                    *p_endPtr = 0;
-                                    usprintf((char *)Tmp_Day[NumDaysReceived].TmpCurrent,"%s",
-                                             p_startPtr);
-                                    *p_endPtr = temp_endValue;
-                                }
-                            }
-
-                            p_startPtr = (uint8_t *)strstr((const char *)locTempString, "\" name=");
-                            if( NULL != p_startPtr )
-                            {
-                                p_startPtr = p_startPtr + strlen("\" name=") + 1;
-                                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "\"");
-                                if( NULL != p_endPtr )
-                                {
-                                    temp_endValue = *p_endPtr;
-                                    *p_endPtr = 0;
-                                    usprintf((char *)Tmp_Day[NumDaysReceived].WeatherSymbol,"%s",
-                                             p_startPtr);
-                                    *p_endPtr = temp_endValue;
-                                }
-                            }
-
-                            p_startPtr = (uint8_t *)strstr((const char *)locTempString, "min=");
-                            if( NULL != p_startPtr )
-                            {
-                                p_startPtr = p_startPtr + strlen("min=") + 1;
-                                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "\"");
-                                if( NULL != p_endPtr )
-                                {
-                                    temp_endValue = *p_endPtr;
-                                    *p_endPtr = 0;
-                                    usprintf((char *)Tmp_Day[NumDaysReceived].TmpMin,"%s",p_startPtr);
-                                    *p_endPtr = temp_endValue;
-                                }
-                            }
-                            p_startPtr = (uint8_t *)strstr((const char *)locTempString, "max=");
-                            if( NULL != p_startPtr )
-                            {
-                                p_startPtr = p_startPtr + strlen("max=") + 1;
-                                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "\"");
-                                if( NULL != p_endPtr )
-                                {
-                                    temp_endValue = *p_endPtr;
-                                    *p_endPtr = 0;
-                                    usprintf((char *)Tmp_Day[NumDaysReceived].TmpMax,"%s",p_startPtr);
-                                    *p_endPtr = temp_endValue;
-                                }
-                            }
-                            NumDaysReceived++;
-                        }
-                        else
-                        {
-                            p_startPtr = (uint8_t *)strstr((const char *)locTempString, "min=");
-                            if( NULL != p_startPtr )
-                            {
-                                p_startPtr = p_startPtr + strlen("min=") + 1;
-                                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "\"");
-                                if( NULL != p_endPtr )
-                                {
-                                    temp_endValue = *p_endPtr;
-
-                                    *p_endPtr = 0;
-                                    if (ustrcmp((const char *)Tmp_Day[NumDaysReceived - 1].TmpMin,
-                                                (const char *)p_startPtr) == 1)
-                                    {
-                                        usprintf((char *)Tmp_Day[NumDaysReceived- 1].TmpMin,"%s",
-                                                 p_startPtr);
-                                    }
-                                    *p_endPtr = temp_endValue;
-                                }
-                            }
-
-                            p_startPtr = (uint8_t *)strstr((const char *)locTempString, "max=");
-                            if( NULL != p_startPtr )
-                            {
-                                p_startPtr = p_startPtr + strlen("max=") + 1;
-                                p_endPtr = (uint8_t *)strstr((const char *)p_startPtr, "\"");
-                                if( NULL != p_endPtr )
-                                {
-                                    temp_endValue = *p_endPtr;
-                                    *p_endPtr = 0;
-                                    if (ustrcmp((const char *)Tmp_Day[NumDaysReceived - 1].TmpMax,
-                                                (const char *)p_startPtr) == -1)
-                                    {
-                                        usprintf((char *)Tmp_Day[NumDaysReceived - 1].TmpMax,"%s",
-                                                 p_startPtr);
-                                    }
-                                    *p_endPtr = temp_endValue;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
-
-    UART_PRINT("\n\r\n\r");
-    for (dataIndex = 0; dataIndex < 5; dataIndex++)
-    {
-        UART_PRINT(" Date: %s, Symbol:%s CUR:%s MIN:%s MAX:%s \n\r",
-                   Tmp_Day[dataIndex].TmpDate, Tmp_Day[dataIndex].WeatherSymbol,
-                   Tmp_Day[dataIndex].TmpCurrent, Tmp_Day[dataIndex].TmpMin,
-                   Tmp_Day[dataIndex].TmpMax);
-    }
-    return 0;   //SUCCESS
-}
-
-
-/***********************************************************
-  Function: getSNTPTime
-*/
 static int32_t getSNTPTime(int16_t gmt_hr, int16_t gmt_min)
 {
-    /*
-                                NTP Packet Header:
-
-
-           0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9  0  1
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |LI | VN  |Mode |    Stratum    |     Poll      |   Precision    |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                          Root  Delay                           |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                       Root  Dispersion                         |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                     Reference Identifier                       |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                                                                |
-          |                    Reference Time-stamp (64)                    |
-          |                                                                |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                                                                |
-          |                    Originate Time-stamp (64)                    |
-          |                                                                |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                                                                |
-          |                     Receive Time-stamp (64)                     |
-          |                                                                |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                                                                |
-          |                     Transmit Time-stamp (64)                    |
-          |                                                                |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                 Key Identifier (optional) (32)                 |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-          |                                                                |
-          |                                                                |
-          |                 Message Digest (optional) (128)                |
-          |                                                                |
-          |                                                                |
-          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    */
-
     SlSockAddrIn_t  LocalAddr;
     SlSockAddr_t Addr;
 
@@ -920,7 +472,7 @@ static int32_t getSNTPTime(int16_t gmt_hr, int16_t gmt_min)
         UART_PRINT(" Device couldn't receive time information \n\r");
     }
 
-    if (/*(dataBuf[0] & 0x7) != 4*/ false) /* expect only server response */
+    if ((dataBuf[0] & 0x7) != 4) /* expect only server response */
     {
         /* MODE is not server, abort */
         UART_PRINT(" Device is expecting response from server only!\n\r");
@@ -934,95 +486,11 @@ static int32_t getSNTPTime(int16_t gmt_hr, int16_t gmt_min)
         App_CB.timeElapsedSec  += dataBuf[42];
         App_CB.timeElapsedSec  <<= 8;
         App_CB.timeElapsedSec  += dataBuf[43];
-
-        /*
-        App_CB.timeElapsedSec  -= TIME2013;
-        App_CB.timeElapsedSec  += (gmt_hr * SEC_IN_HOUR);
-        App_CB.timeElapsedSec  += (gmt_min * SEC_IN_MIN);
-        App_CB.timeCCPtr = &App_CB.time[0];
-        App_CB.timeSGeneralVar = App_CB.timeElapsedSec/SEC_IN_DAY;
-        memcpy(App_CB.timeCCPtr, daysOfWeek2013[App_CB.timeSGeneralVar%7], 3);
-        App_CB.timeCCPtr += 3;
-        *App_CB.timeCCPtr++ = '\x20';
-        App_CB.timeSGeneralVar %= 365;
-        for (index = 0; index < 12; index++)
-        {
-            App_CB.timeSGeneralVar -= numOfDaysPerMonth[index];
-            if (App_CB.timeSGeneralVar < 0)
-                break;
-        }
-        memcpy(App_CB.timeCCPtr, monthOfYear[index], 3);
-        App_CB.timeCCPtr += 3;
-        *App_CB.timeCCPtr++ = '\x20';
-        App_CB.timeSGeneralVar += numOfDaysPerMonth[index];
-        App_CB.timeCCLen = itoa(App_CB.timeSGeneralVar + 1, App_CB.timeCCPtr);
-        App_CB.timeCCPtr += App_CB.timeCCLen;
-        *App_CB.timeCCPtr++ = '\x20';
-        App_CB.timeUGeneralVar = App_CB.timeElapsedSec/SEC_IN_DAY;
-        App_CB.timeUGeneralVar /= 365;
-        App_CB.timeCCLen = itoa(YEAR2013 + App_CB.timeUGeneralVar , App_CB.timeCCPtr);
-        App_CB.timeCCPtr += App_CB.timeCCLen;
-        *App_CB.timeCCPtr++ = '\x20';
-        App_CB.timeUGeneralVar = App_CB.timeElapsedSec%SEC_IN_DAY;
-        App_CB.timeUGeneralVar1 = App_CB.timeUGeneralVar%SEC_IN_HOUR;
-        App_CB.timeUGeneralVar /= SEC_IN_HOUR;
-        App_CB.timeCCLen = itoa(App_CB.timeUGeneralVar, App_CB.timeCCPtr);
-        App_CB.timeCCPtr += App_CB.timeCCLen;
-        *App_CB.timeCCPtr++ = ':';
-        App_CB.timeUGeneralVar = App_CB.timeUGeneralVar1/SEC_IN_MIN;
-        App_CB.timeUGeneralVar1 %= SEC_IN_MIN;
-        App_CB.timeCCLen = itoa(App_CB.timeUGeneralVar, App_CB.timeCCPtr);
-        App_CB.timeCCPtr += App_CB.timeCCLen;
-        *App_CB.timeCCPtr++ = ':';
-        App_CB.timeCCLen = itoa(App_CB.timeUGeneralVar1, App_CB.timeCCPtr);
-        App_CB.timeCCPtr += App_CB.timeCCLen;
-        *App_CB.timeCCPtr++ = '\x20';
-        *App_CB.timeCCPtr++ = '\0';
-
-        UART_PRINT("\r\n Server ");
-        UART_PRINT("%s",SNTPserver);
-        UART_PRINT(" has responded with time information");
-        UART_PRINT("\n\r\r\n");
-        UART_PRINT("%s",App_CB.time);
-        UART_PRINT("\n\r\r\n");
-        */
     }
 
     return 0;
 }
 
-/***********************************************************
-  Function: getWeather
-*/
-static int32_t getWeather(void)
-{
-    int32_t retVal = -1;
-
-    strcpy((char *)App_CB.weatherHostName, WEATHER_SERVER);
-
-    retVal = getHostIPforWeather();
-    if(retVal < 0)
-    {
-        UART_PRINT("Unable to reach Host\n\r");
-        ASSERT_ON_ERROR(retVal);
-    }
-
-    App_CB.weatherSockID = createConnectionforWeather();
-    ASSERT_ON_ERROR(App_CB.weatherSockID);
-
-    strcpy((char *)App_CB.weatherCityName, (const char *)flashDemoConfigParams.city);
-
-    retVal = getForecastData();
-    ASSERT_ON_ERROR(retVal);
-
-    retVal = sl_Close(App_CB.weatherSockID);
-    ASSERT_ON_ERROR(retVal);
-    return 0;
-}
-
-/***********************************************************
-  Function: getTime
-*/
 static int32_t getTime()
 {
     int32_t retVal = -1;
@@ -1055,7 +523,8 @@ static void *udpServerThreadProc(void* pArg)
     SlSocklen_t ServerSize, ClientSize;
     struct SlTimeval_t TimeVal;
     SlSockAddrIn_t ServerAddr, ClientAddr;
-    uint8_t dataBuf[255];
+    uint8_t DataBuf[16][16];
+    int nBytes;
 
     sd = sl_Socket(SL_AF_INET, SL_SOCK_DGRAM, /*SL_IPPROTO_UDP*/ 0);
     if(sd < 0)
@@ -1086,17 +555,17 @@ static void *udpServerThreadProc(void* pArg)
     {
         ClientSize = sizeof(SlSockAddrIn_t);
         memset(&ClientAddr, 0, ClientSize);
-        memset(dataBuf, 0, sizeof(dataBuf));
+        memset(DataBuf, 0, sizeof(DataBuf));
 
-        retVal = sl_RecvFrom(sd, dataBuf, sizeof(dataBuf), 0,
+        nBytes = sl_RecvFrom(sd, DataBuf, sizeof(DataBuf), 0,
                              (SlSockAddr_t *)&ClientAddr, (SlSocklen_t*)&ClientSize);
-        if (retVal <= 0)
+        if (nBytes <= 0)
         {
             //UART_PRINT("Recieve timed out\n\r");
             continue;
         }
 
-        UART_PRINT("Recieved %d bytes\r\n", retVal);
+        UART_PRINT("Recieved %d bytes\r\n", nBytes);
 
         /*
          * Expected SMO Data Packet Structure
@@ -1124,14 +593,24 @@ static void *udpServerThreadProc(void* pArg)
          */
         int Res = 0;
 
-        //check simple packet formatting
-        if (dataBuf[0] != SMO_PACKET_TYPE_HEADER)
+        //AES-256 decrypt the packet
+        int nBlocks = nBytes / AES256_BLOCKSIZE + (nBytes % AES256_BLOCKSIZE != 0);
+        nBlocks = nBlocks > 16 ? 16 : nBlocks;
+        AES256_setDecipherKey(AES256_BASE, AesKey256, AES256_KEYLENGTH_256BIT);
+        int i;
+        for (i = 0; i < nBlocks; i++)
+        {
+            AES256_decryptData(AES256_BASE, DataBuf[i], DataAESdecrypted[i]);
+        }
+
+        //check packet type
+        if (DataAESdecrypted[0][0] != SMO_PACKET_TYPE_HEADER)
         {
             UART_PRINT("Invalid packet type recieved\r\n");
             continue;
         }
 
-        uint8_t nMeds = dataBuf[1];
+        uint8_t nMeds = DataAESdecrypted[0][1];
         if (nMeds == 0 || nMeds > SMO_PACKET_MAX_MEDS)
         {
             UART_PRINT("Invalid number of meds recieved\r\n");
@@ -1140,7 +619,7 @@ static void *udpServerThreadProc(void* pArg)
 
         //copy received data into packet
         SMO_Packet Pkt;
-        memcpy(&Pkt, dataBuf, SMO_PACKET_HEADER_SIZE + nMeds * sizeof(SMO_PacketMed));
+        memcpy(&Pkt, DataAESdecrypted, SMO_PACKET_HEADER_SIZE + nMeds*sizeof(SMO_PacketMed));
 
         newTime = MAP_RTC_C_getCalendarTime();
 
@@ -1314,8 +793,8 @@ void mainThread(void * args)
         Pkt.nMeds = 3;
         {
             SMO_PacketMed Med1;
-            Med1.AlarmHour = 17;
-            Med1.AlarmMin = 39;
+            Med1.AlarmHour = 16;
+            Med1.AlarmMin = 59;
             Med1.nCmptmt = 1;
             Med1.nPills = 2;
             Med1.Length = 10;
@@ -1323,7 +802,7 @@ void mainThread(void * args)
 
             SMO_PacketMed Med2;
             Med2.AlarmHour = 17;
-            Med2.AlarmMin = 45;
+            Med2.AlarmMin = 20;
             Med2.nCmptmt = 2;
             Med2.nPills = 1;
             Med2.Length = 10;
@@ -1331,7 +810,7 @@ void mainThread(void * args)
 
             SMO_PacketMed Med3;
             Med3.AlarmHour = 17;
-            Med3.AlarmMin = 42;
+            Med3.AlarmMin = 18;
             Med3.nCmptmt = 3;
             Med3.nPills = 1;
             Med3.Length = 10;
@@ -1350,6 +829,7 @@ void mainThread(void * args)
             UART_PRINT("Error configuring SMO\r\n");
         }
 
+        newTime = MAP_RTC_C_getCalendarTime();
         pthread_mutex_lock(&SMO_Mutex);
         retc = SMO_scheduleNextEvent(&SMO_Ctrl, newTime.hours, newTime.minutes);
         pthread_mutex_unlock(&SMO_Mutex);
@@ -1361,7 +841,63 @@ void mainThread(void * args)
 
         while (App_CB.resetApplication == false)
         {
-            UART_PRINT("Date: %s\r\n", RTC_getDate());
+            char *Date = RTC_getDate();
+
+            UART_PRINT("Date: %s\r\n", Date);
+
+            /*
+            //AES data must be multiple of 16
+            int DateLen = strlen(Date);
+            int i;
+
+            uint8_t DataBuf[DATE_BLOCKS][AES256_BLOCKSIZE];
+            uint8_t EncryptedBuf[DATE_BLOCKS][AES256_BLOCKSIZE];
+            uint8_t DecryptedBuf[DATE_BLOCKS][AES256_BLOCKSIZE];
+            memset(DataBuf, 0, sizeof(DataBuf));
+            int DataLen = (DateLen > sizeof(DataBuf)) ? sizeof(DataBuf) : DateLen;
+            memcpy(DataBuf, Date, DataLen);
+
+            UART_PRINT("AES Data: %s\r\n", (char *) DataBuf);
+
+            AES256_setCipherKey(AES256_BASE, AesKey256, AES256_KEYLENGTH_256BIT);
+            for (i = 0; i < DATE_BLOCKS; i++)
+            {
+                AES256_encryptData(AES256_BASE, DataBuf[i], EncryptedBuf[i]);
+            }
+
+            UART_PRINT("Encrypted Data: ");
+            for (i = 0; i < sizeof(EncryptedBuf); i++)
+            {
+                UART_PRINT("%x", (char) EncryptedBuf[0][i]);
+            }
+            UART_PRINT("\r\n");
+
+            AES256_setDecipherKey(AES256_BASE, AesKey256, AES256_KEYLENGTH_256BIT);
+            for (i = 0; i < DATE_BLOCKS; i++)
+            {
+                AES256_decryptData(AES256_BASE, EncryptedBuf[i], DecryptedBuf[i]);
+            }
+
+            UART_PRINT("Decrypted Data: %s\r\n", (char *) DecryptedBuf);
+            */
+
+            /*
+            uint8_t DecryptedBuf[3][AES256_BLOCKSIZE];
+
+            AES256_setDecipherKey(AES256_BASE, AesKey256, AES256_KEYLENGTH_256BIT);
+            int i;
+            for (i = 0; i < 3; i++)
+            {
+                AES256_decryptData(AES256_BASE, EncryptedPacket[i], DecryptedBuf[i]);
+            }
+
+            UART_PRINT("Decrypted Data: ");
+            for (i = 0; i < sizeof(DecryptedBuf); i++)
+            {
+                UART_PRINT("%x", DecryptedBuf[0][i]);
+            }
+            UART_PRINT("\r\n");
+            */
 
             sleep(10);
         }
@@ -1500,7 +1036,7 @@ static int SMO_scheduleNextEvent(SMO_Control *Ctrl, uint8_t Hour, uint8_t Min)
         goto Error;
     }
 
-    UART_PRINT("Scheduling next event for %d:%d\r\n", NextEvent->AlarmHour, NextEvent->AlarmMin);
+    UART_PRINT("Scheduling next event for %02d:%02d\r\n", NextEvent->AlarmHour, NextEvent->AlarmMin);
     //set an alarm for the next event
     RTC_setAlarm(NextEvent->AlarmMin, NextEvent->AlarmHour, RTC_C_ALARMCONDITION_OFF, RTC_C_ALARMCONDITION_OFF);
 
@@ -1558,10 +1094,3 @@ static int SMO_handleEvent(SMO_Control *Ctrl)
 Error:
     return Res;
 }
-
-//*****************************************************************************
-//
-// Close the Doxygen group.
-//! @}
-//
-//*****************************************************************************

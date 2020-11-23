@@ -33,7 +33,7 @@
 //*****************************************************************************
 // network_if.h
 //
-// Networking interface macro and function prototypes for CC3220 device
+// Networking interface macro and function prototypes for CC3120 device
 //
 //*****************************************************************************
 
@@ -51,20 +51,19 @@ extern "C"
 {
 #endif
 
-/* Simplelink includes                                                        */
+/* Simplelink includes */
 #include <ti/drivers/net/wifi/simplelink.h>
 
 /* Values for below macros shall be modified as per access-point(AP)          */
 /* properties SimpleLink device will connect to following AP when application */
 /* is executed.                                                               */
 
-/* AP SSID                                                                    */
+/* AP SSID */
 #define SSID_NAME               "" //ENTER NETWORK NAME HERE
-/* Security type (OPEN or WEP or WPA)                                         */
+/* Security type (OPEN or WEP or WPA) */
 #define SECURITY_TYPE           SL_WLAN_SEC_TYPE_WPA_WPA2 /*SL_WLAN_SEC_TYPE_OPEN*/
-/* Password of the secured AP                                                 */
-#define SECURITY_KEY            "" //ENTER NETWORK PASSWORD HERE
-
+/* Password of the secured AP */
+#define SECURITY_KEY            "" //ENTER NETWORK PASSWORD HERE (Don't push this to GitHub you dummy)
 #define SSID_AP_MODE            "<ap-ssid>"
 #define SEC_TYPE_AP_MODE        SL_WLAN_SEC_TYPE_OPEN
 #define PASSWORD_AP_MODE        ""

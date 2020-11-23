@@ -99,20 +99,21 @@ static int SMO_Vector_addMed(SMO_Vector *Vec, SMO_PacketMed *Med)
         if (TmpEvent->AlarmHour == Med->AlarmHour
             && TmpEvent->AlarmMin == Med->AlarmMin)
         {
-            UART_PRINT("Adding med to event at %d:%d in Cmptmt %d\r\n",
+            UART_PRINT("Adding med to event at %02d:%02d in Cmptmt %d\r\n",
                        TmpEvent->AlarmHour, TmpEvent->AlarmMin, Med->nCmptmt);
             SMO_Event_addMed(TmpEvent, Med->nCmptmt, Med->nPills);
             goto Success;
         }
-        else if (TmpEvent->AlarmHour >= Med->AlarmHour
-                 && TmpEvent->AlarmMin > Med->AlarmMin)
+        else if (TmpEvent->AlarmHour > Med->AlarmHour
+                 || (TmpEvent->AlarmHour == Med->AlarmHour
+                 && TmpEvent->AlarmMin > Med->AlarmMin))
         {
             AddIndex = i;
             break;
         }
     }
 
-    UART_PRINT("Creating new event for med at %d:%d in Cmptmt %d\r\n", Med->AlarmHour, Med->AlarmMin, Med->nCmptmt);
+    UART_PRINT("Creating new event for med at %02d:%02d in Cmptmt %d\r\n", Med->AlarmHour, Med->AlarmMin, Med->nCmptmt);
     //allocate memory for the new event
     NewEvent = malloc(sizeof(SMO_Event));
     SMO_Event_init(NewEvent);
@@ -148,8 +149,9 @@ static SMO_Event *SMO_Vector_findNextEvent(SMO_Vector *Vec, uint8_t Hour, uint8_
     int i;
     for (i = 0; i < Vec->Size; ++i)
     {
-        if (Vec->Events[i]->AlarmHour >= Hour
-            && Vec->Events[i]->AlarmMin > Min)
+        if (Vec->Events[i]->AlarmHour > Hour
+            || ((Vec->Events[i]->AlarmHour == Hour)
+            && Vec->Events[i]->AlarmMin > Min))
         {
             Event = Vec->Events[i];
             break;

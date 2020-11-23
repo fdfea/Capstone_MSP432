@@ -30,6 +30,9 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef GET_TIME_H
+#define GET_TIME_H
+
 /* Standard includes                                                          */
 #include <mqueue.h>
 #include <stdbool.h>
@@ -41,7 +44,7 @@
 #include "SMO.h"
 
 /* Application Name and Version*/
-#define APPLICATION_NAME        "Get Time Wifi Demo"
+#define APPLICATION_NAME        "6 Ohms Apart Capstone"
 #define APPLICATION_VERSION     "0.1.0"
 
 #define PROVISIONING        (0)
@@ -65,22 +68,21 @@
 
 #define SL_STOP_TIMEOUT         (200)
 
-/*  Date and Time */
-#define SMALL_BUF           32
-#define TIME2013            3565987200       /* 43 years + 11 days of leap years */
-#define YEAR2013            2013
-#define SEC_IN_MIN          60
-#define SEC_IN_HOUR         3600
-#define SEC_IN_DAY          86400
-#define GMT_TIME_ZONE_HR    1
-#define GMT_TIME_ZONE_MIN   00
-
 #define SECONDS_BEFORE_UNIX_EPOCH   2208988800
 #define TZ_EST_OFFSET_SECS          18000
 
-/* Weather */
-#define MAX_SEND_BUF_SIZE   512
-#define MAX_SEND_RCV_SIZE   1000
+#define SMALL_BUF           32
+#define GMT_TIME_ZONE_HR    1
+#define GMT_TIME_ZONE_MIN   00
+
+#define TIMEOUT_SEC         2
+#define TIMEOUT_USEC        0
+#define DATA_PORT           5004
+#define AES256_BLOCKSIZE    16
+#define DATE_BLOCKS         2
+
+/* Expiration value for the timer that is being used to toggle the Led.       */
+#define TIMER_EXPIRATION_VALUE   100 * 1000000
 
 /* Loop forever, user can change it as per application's requirement          */
 #define LOOP_FOREVER() \
@@ -179,13 +181,6 @@ typedef struct Application_ControlBlock_t
     int32_t   apConnectionState;                        /* Connection state: (0) - connected, (negative) - disconnected               */
     uint32_t  initState;                                /* Represents what initialization state the MQTT interface is in */
 
-    uint8_t  weatherRecvbuff[MAX_SEND_RCV_SIZE];
-    uint8_t  weatherSendBuff[MAX_SEND_BUF_SIZE];
-    uint8_t  weatherHostName[SMALL_BUF];
-    uint8_t  weatherCityName[SMALL_BUF];
-    uint32_t weatherDestinationIP;
-    int16_t  weatherSockID;
-
     uint32_t timeElapsedSec;
     uint32_t timeUGeneralVar;
     uint32_t timeUGeneralVar1;
@@ -204,19 +199,7 @@ typedef struct Application_ControlBlock_t
     /* Security */
     uint8_t     lockUDID[16];
 
-
-}Application_CB;
-
-/*
-  Type: Tmp_Day
-*/
-typedef struct {
-    uint8_t TmpDate[14];
-    uint8_t TmpCurrent[10];
-    uint8_t TmpMin[10];
-    uint8_t TmpMax[10];
-    uint8_t WeatherSymbol[30];
-} Tmp_Day_t;
+} Application_CB;
 
 typedef struct {
     uint8_t    ssid[100];
@@ -228,7 +211,4 @@ typedef struct {
     uint8_t    demoCityConfigured;
 } demo_Config_t;
 
-//****************************************************************************
-//                      FUNCTION PROTOTYPES
-//****************************************************************************
-void mcuReboot(void);
+#endif
