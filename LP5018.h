@@ -21,5 +21,4 @@ void LP5018_setAllColor(uint8_t r, uint8_t g, uint8_t b);
 void LP5018_setBrightness(uint8_t led, uint8_t brightness);
 void LP5018_setAllBrightness(uint8_t brightness);
 
-
 #endif

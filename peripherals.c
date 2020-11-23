@@ -2,11 +2,14 @@
 #include "LP5018.h"
 #include "board.h"
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
-#define GRAY  	0x919191UL
-#define BLACK  	0x222222UL
-#define WHITE  	0xFFFFFFUL
-#define LAYOUT_Y1 120
+#define GRAY  	    0x919191UL
+#define BLACK  	    0x222222UL
+#define WHITE  	    0xFFFFFFUL
+#define LAYOUT_Y1   120
 
 extern volatile bool peripheralThreadStop;
 
@@ -20,7 +23,6 @@ int hour;
 bool speakerOn;
 
 void LED_init(){
-	bool retVal = false;
 	I2C_init();
 	/* Create I2C for usage */
 	I2C_Params_init(&i2cParams);
@@ -80,7 +82,7 @@ void Screen_init(){
 void Screen_printf(const char *format, ...){
 	va_list args;
 	va_start(args, format);
-	vsprintf(printBuf, format, args);
+	sprintf(printBuf, format, args);
 	va_end(args);
 }
 
@@ -89,8 +91,8 @@ void Screen_printMedInfo(char *MedInfo){
 }
 
 void Screen_reset(){
-	memset(printBuf,0,sizeof(printBuf));
-	Screen_update();
+	memset(printBuf, 0, sizeof(printBuf));
+	//Screen_update();
 }
 
 void Screen_updateTime(int Hour, int Min){
@@ -98,11 +100,11 @@ void Screen_updateTime(int Hour, int Min){
 	sprintf(timeString2, Hour > 11 && Hour < 24 ? "PM":"AM");
 	Hour = Hour > 12 ? Hour-12:Hour;
 	// Zero pad single digit min
-	sprintf(timeString, min < 10 ? "%d:0%d":"%d:%d", Hour, Min);
+	sprintf(timeString, Min < 10 ? "%d:0%d":"%d:%d", Hour, Min);
 }
 
-void Screen_updateDate(char *Date){
-	sprintf(dateString, Date);
+void Screen_updateDate(char *Date) {
+	snprintf(dateString, 20, Date);
 }
 
 void Screen_update(){
@@ -125,12 +127,13 @@ void Screen_update(){
 }
 
 void *peripheralThreadProc(void *arg0){
-	Screen_updateDate("November 14, 2020");
+	//Screen_updateDate("November 14, 2020");
 	sec = 58;
 	min = 59;
 	hour = 11;
 	while(!peripheralThreadStop){
 		// Simple clock, replace with rtc
+	    /*
 		sec++;
 		delay(1000);
         if (sec == 60) {
@@ -146,6 +149,7 @@ void *peripheralThreadProc(void *arg0){
         }
         Screen_updateTime(hour, min);
 	    // Update display
+	     */
 		Screen_update();
 	}
 	return (0);

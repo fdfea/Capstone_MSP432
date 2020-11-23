@@ -65,6 +65,7 @@
 
 #include "rtc.h"
 #include "SMO.h"
+#include "peripherals.h"
 
 //*****************************************************************************
 //                      LOCAL FUNCTION PROTOTYPES
@@ -658,23 +659,6 @@ void mainThread(void * args)
 {
     int32_t retc = 0;
 
-    /* Initialize screen to display load screen */
-    Screen_init();
-
-    /* This can be moved */
-    peripheralThreadStop = false;
-    pthread_t peripheralThread;
-    pthread_attr_t peripheralThreadAttr;
-    pthread_attr_init(&peripheralThreadAttr);
-    retc |= pthread_attr_setstacksize(&peripheralThreadAttr, TASK_STACK_SIZE);
-    retc |= pthread_attr_setdetachstate(&peripheralThreadAttr, PTHREAD_CREATE_DETACHED);
-    retc |= pthread_create(&peripheralThread, &peripheralThreadAttr, peripheralThreadProc, NULL);
-    if (retc < 0)
-    {
-        UART_PRINT("peripheral Thread create failed\r\n");
-        while (1);
-    }
-
     /* Thread vars */
     pthread_t spawn_thread = (pthread_t) NULL;
     pthread_attr_t pAttrs_spawn;
@@ -702,11 +686,10 @@ void mainThread(void * args)
     /* Init SPI for communicating between M4 and NWP */
     SPI_init();
 
-    /* Configure the UART                                                     */
+    /* Configure the UART */
     tUartHndl = InitTerm();
-    /* remove uart receive from LPDS dependency                               */
+    /* remove uart receive from LPDS dependency */
     UART_control(tUartHndl, UART_CMD_RXDISABLE, NULL);
-
 
     Button_Params_init(&buttonParams);
     okayButtonHandle = Button_open(CONFIG_BUTTON_0, SMO_okayButtonHandler, &buttonParams);
@@ -716,7 +699,7 @@ void mainThread(void * args)
         UART_PRINT("Button open failed\r\n");
     }
 
-    /* Create the sl_Task                                                     */
+    /* Create the sl_Task */
     pthread_attr_init(&pAttrs_spawn);
     priParam.sched_priority = SPAWN_TASK_PRIORITY;
     retc |= pthread_attr_setschedparam(&pAttrs_spawn, &priParam);
@@ -727,27 +710,27 @@ void mainThread(void * args)
     if (retc != 0)
     {
         UART_PRINT("could not create simplelink task\n\r");
-        //while (1); // Insert error handling
+        while (1); // Insert error handling
     }
 
     /* Started to allow host to read back MAC address when printing App banner */
-    //retc = sl_Start(0, 0, 0);
+    retc = sl_Start(0, 0, 0);
     if (retc < 0)
     {
         /* Handle Error */
         UART_PRINT("\n sl_Start failed\n");
-        //while (1);// Insert error handling
+        while (1);// Insert error handling
     }
 
-    /* Output device information to the UART terminal                         */
+    /* Output device information to the UART terminal */
     retc = DisplayAppBanner(APPLICATION_NAME, APPLICATION_VERSION);
 
-    //retc = sl_Stop(SL_STOP_TIMEOUT);
+    retc = sl_Stop(SL_STOP_TIMEOUT);
     if (retc < 0)
     {
         /* Handle Error */
         UART_PRINT("\n sl_Stop failed\n");
-        //while (1);
+        while (1);
     }
 
     pthread_mutexattr_t Attr;
@@ -767,8 +750,9 @@ void mainThread(void * args)
         UART_PRINT("Using hardcoded profile for connection.\n\r");
         App_CB.apConnectionState = WiFi_IF_Connect();
 
-        RTC_init();
         SMO_Control_init(&SMO_Ctrl);
+
+        UART_PRINT("Before peripheral thread\r\n");
 
         udpThreadStop = false;
         pthread_t udpServerThread;
@@ -783,11 +767,48 @@ void mainThread(void * args)
             while (1);
         }
 
+        UART_PRINT("After peripheral thread\r\n");
+
+        /* Initialize screen to display load screen */
+        Screen_init();
+
+        /* Initialize LEDs */
+        //LED_init();
+
+        /* Initialize speaker */
+        Speaker_init();
+
+        UART_PRINT("After peripheral initialization\r\n");
+
+        /* Initialize the real-time clock */
+        RTC_init();
+
         retc = getTime();
+
+        /* This can be moved */
+        peripheralThreadStop = false;
+        pthread_t peripheralThread;
+        pthread_attr_t peripheralThreadAttr;
+        pthread_attr_init(&peripheralThreadAttr);
+        retc |= pthread_attr_setstacksize(&peripheralThreadAttr, TASK_STACK_SIZE);
+        retc |= pthread_attr_setdetachstate(&peripheralThreadAttr, PTHREAD_CREATE_DETACHED);
+        retc |= pthread_create(&peripheralThread, &peripheralThreadAttr, peripheralThreadProc, NULL);
+        if (retc < 0)
+        {
+            UART_PRINT("peripheral Thread create failed\r\n");
+            while (1);
+        }
 
         App_CB.timeElapsedSec -= TZ_EST_OFFSET_SECS;
 
         RTC_setTime((time_t) App_CB.timeElapsedSec);
+
+        newTime = MAP_RTC_C_getCalendarTime();
+
+        char *Date = RTC_getDate();
+
+        Screen_updateTime(newTime.hours, newTime.minutes);
+        Screen_updateDate(Date);
 
         /*
         SMO_Packet Pkt;
@@ -840,6 +861,8 @@ void mainThread(void * args)
             UART_PRINT("Error scheduling event\r\n");
         }
         */
+
+        int count = 0;
 
         while (App_CB.resetApplication == false)
         {
@@ -901,6 +924,33 @@ void mainThread(void * args)
             UART_PRINT("\r\n");
             */
 
+            /*
+            if (count % 2 == 0)
+            {
+                LED_allOn();
+            }
+            else
+            {
+                LED_allOff();
+            }
+            */
+
+            count++;
+
+            char Info[50];
+            sprintf(Info, "Medicine1\nMedicine2\n%d", count);
+            //char *Info = "Medicine1\r\nMedicine2\r\n%d";
+            Screen_printMedInfo(Info);
+
+            if (count % 2 == 0)
+            {
+                Speaker_on();
+            }
+            else
+            {
+                Speaker_off();
+            }
+
             sleep(10);
         }
 
@@ -910,13 +960,8 @@ void mainThread(void * args)
         //wait for server to stop
         pthread_join(udpServerThread, NULL);
         //wait for peripherals to stop
-        /*
         pthread_join(peripheralThread, NULL);
-        */
     }
-
-    //SMO_Control_free(&SMO_Ctrl);
-    //RTC_free();
 }
 
 /*
@@ -941,7 +986,7 @@ extern void RTC_C_IRQHandler(uintptr_t Arg)
         UART_PRINT("RTC Int: Minute Passed\r\n");
 
         //update screen time display every minute
-        //Screen_updateTime(newTime.minutes, newTime.hours);
+        Screen_updateTime(newTime.hours, newTime.minutes);
 
         pthread_mutex_lock(&SMO_Mutex);
         if (SMO_Ctrl.Timer.Timing)

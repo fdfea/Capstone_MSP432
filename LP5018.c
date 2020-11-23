@@ -1,8 +1,7 @@
 #include "LP5018.h"
 #include "board.h"
 
-void LP5018_Init(){
-    bool retVal = false;
+void LP5018_init(){
     txBuffer[0] = 0x00;
     txBuffer[1] = 0x40;
     i2cTransaction.slaveAddress = 0x28;

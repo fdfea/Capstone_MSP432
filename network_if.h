@@ -56,7 +56,7 @@ extern "C"
 
 /* Values for below macros shall be modified as per access-point(AP)          */
 /* properties SimpleLink device will connect to following AP when application */
-/* is executed.                                                               */
+/* is executed. */
 
 /* AP SSID */
 #define SSID_NAME               "" //ENTER NETWORK NAME HERE
