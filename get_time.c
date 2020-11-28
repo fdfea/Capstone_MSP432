@@ -49,6 +49,8 @@
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
 #include <ti/devices/msp432p4xx/driverlib/aes256.h>
 
+#include <ti/sysbios/hal/Hwi.h>
+
 #include <ti/drivers/apps/Button.h>
 
 /* SlNetSock includes (to enable portability to other interfaces like ETH)    */
@@ -82,6 +84,9 @@ extern void *peripheralThreadProc(void *arg0);
 
 static void SMO_handleTimeout(void);
 static void SMO_okayButtonHandler(Button_Handle handle, Button_EventMask events);
+//static void SMO_buttonIRQHandler(void);
+static void SMO_setButtonIRQ(void);
+void PORT5_IRQHandler(void);
 
 static int SMO_scheduleNextEvent(SMO_Control *Ctrl, uint8_t Hour, uint8_t Min);
 static int SMO_handleEvent(SMO_Control *Ctrl);
@@ -120,6 +125,9 @@ static pthread_mutex_t SMO_Mutex;
 
 //handle for okay button
 static Button_Handle okayButtonHandle;
+
+//handle for button hwi
+static Hwi_Handle ButtonHwi;
 
 /* AES256 Key
  * pass=6OhmsApart
@@ -672,12 +680,14 @@ void mainThread(void * args)
     /* Clear lockUDID */
     memset(&App_CB.lockUDID[0], 0x00, sizeof(App_CB.lockUDID));
 
-    /* Initialize SlNetSock layer with CC3x20 interface                      */
+    /* Initialize SlNetSock layer with CC3x20 interface */
+    /*
     SlNetIf_init(0);
     SlNetIf_add(SLNETIF_ID_1, "CC3220", (const SlNetIf_Config_t *) &SlNetIfConfigWifi, SLNET_IF_WIFI_PRIO);
 
     SlNetSock_init(0);
     SlNetUtil_init(0);
+    */
 
     /* Init pins used as GPIOs */
     GPIO_init();
@@ -685,6 +695,12 @@ void mainThread(void * args)
     Button_init();
     /* Init SPI for communicating between M4 and NWP */
     SPI_init();
+
+    /* Initialize the real-time clock */
+    RTC_init();
+
+    /* Initalize the SMO data structure */
+    SMO_Control_init(&SMO_Ctrl);
 
     /* Configure the UART */
     tUartHndl = InitTerm();
@@ -699,7 +715,17 @@ void mainThread(void * args)
         UART_PRINT("Button open failed\r\n");
     }
 
+    //SMO_setButtonIRQ();
+
+    pthread_mutexattr_t Attr;
+    pthread_mutexattr_init(&Attr);
+    pthread_mutexattr_settype(&Attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&SMO_Mutex, &Attr);
+
+    UART_PRINT("Before Wifi\r\n");
+
     /* Create the sl_Task */
+    /*
     pthread_attr_init(&pAttrs_spawn);
     priParam.sched_priority = SPAWN_TASK_PRIORITY;
     retc |= pthread_attr_setschedparam(&pAttrs_spawn, &priParam);
@@ -712,31 +738,27 @@ void mainThread(void * args)
         UART_PRINT("could not create simplelink task\n\r");
         while (1); // Insert error handling
     }
+    */
 
     /* Started to allow host to read back MAC address when printing App banner */
+    /*
     retc = sl_Start(0, 0, 0);
     if (retc < 0)
     {
-        /* Handle Error */
         UART_PRINT("\n sl_Start failed\n");
-        while (1);// Insert error handling
+        //while (1);// Insert error handling
     }
 
-    /* Output device information to the UART terminal */
+    //Output device information to the UART terminal
     retc = DisplayAppBanner(APPLICATION_NAME, APPLICATION_VERSION);
 
     retc = sl_Stop(SL_STOP_TIMEOUT);
     if (retc < 0)
     {
-        /* Handle Error */
         UART_PRINT("\n sl_Stop failed\n");
-        while (1);
+        //while (1);
     }
-
-    pthread_mutexattr_t Attr;
-    pthread_mutexattr_init(&Attr);
-    pthread_mutexattr_settype(&Attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&SMO_Mutex, &Attr);
+    */
 
     /* Main application loop */
     while (1)
@@ -748,13 +770,12 @@ void mainThread(void * args)
 
         /* Connect to AP */
         UART_PRINT("Using hardcoded profile for connection.\n\r");
-        App_CB.apConnectionState = WiFi_IF_Connect();
-
-        SMO_Control_init(&SMO_Ctrl);
+        //App_CB.apConnectionState = WiFi_IF_Connect();
 
         UART_PRINT("Before peripheral thread\r\n");
 
         udpThreadStop = false;
+        /*
         pthread_t udpServerThread;
         pthread_attr_t udpThreadAttr;
         pthread_attr_init(&udpThreadAttr);
@@ -766,26 +787,35 @@ void mainThread(void * args)
             UART_PRINT("UDP Server create failed\r\n");
             while (1);
         }
+        */
 
         UART_PRINT("After peripheral thread\r\n");
 
         /* Initialize screen to display load screen */
-        Screen_init();
+        //Screen_init();
 
         /* Initialize LEDs */
         //LED_init();
+        //LP5018_read();
 
         /* Initialize speaker */
-        Speaker_init();
+        //Speaker_init();
+        //Speaker_off();
 
         UART_PRINT("After peripheral initialization\r\n");
 
-        /* Initialize the real-time clock */
-        RTC_init();
-
+        /*
         retc = getTime();
 
+        App_CB.timeElapsedSec -= TZ_EST_OFFSET_SECS;
+
+        RTC_setTime((time_t) App_CB.timeElapsedSec);
+        */
+
+        RTC_setTime((time_t) (SECONDS_SINCE_1900 - TZ_EST_OFFSET_SECS));
+
         /* This can be moved */
+        /*
         peripheralThreadStop = false;
         pthread_t peripheralThread;
         pthread_attr_t peripheralThreadAttr;
@@ -798,46 +828,47 @@ void mainThread(void * args)
             UART_PRINT("peripheral Thread create failed\r\n");
             while (1);
         }
+        */
 
-        App_CB.timeElapsedSec -= TZ_EST_OFFSET_SECS;
-
-        RTC_setTime((time_t) App_CB.timeElapsedSec);
-
+        /*
         newTime = MAP_RTC_C_getCalendarTime();
 
         char *Date = RTC_getDate();
 
         Screen_updateTime(newTime.hours, newTime.minutes);
         Screen_updateDate(Date);
+        */
 
-        /*
         SMO_Packet Pkt;
-        Pkt.PacketType = 98;
+        Pkt.PacketType = SMO_PACKET_TYPE_HEADER;
         Pkt.nMeds = 3;
         {
             SMO_PacketMed Med1;
-            Med1.AlarmHour = 16;
-            Med1.AlarmMin = 59;
+            Med1.AlarmHour = 13;
+            Med1.AlarmMin = 38;
             Med1.nCmptmt = 1;
             Med1.nPills = 2;
-            Med1.Length = 10;
-            memcpy(Med1.Payload, "Medicine1", Med1.Length);
+            char *MedInfo1 = "Medicine1";
+            Med1.Length = strlen(MedInfo1);
+            memcpy(Med1.Payload, MedInfo1, Med1.Length);
 
             SMO_PacketMed Med2;
-            Med2.AlarmHour = 17;
-            Med2.AlarmMin = 20;
+            Med2.AlarmHour = 13;
+            Med2.AlarmMin = 41;
             Med2.nCmptmt = 2;
             Med2.nPills = 1;
-            Med2.Length = 10;
-            memcpy(Med2.Payload, "Medicine2", Med2.Length);
+            char *MedInfo2 = "Medicine2";
+            Med2.Length = strlen(MedInfo2);
+            memcpy(Med2.Payload, MedInfo2, Med2.Length);
 
             SMO_PacketMed Med3;
-            Med3.AlarmHour = 17;
-            Med3.AlarmMin = 18;
+            Med3.AlarmHour = 13;
+            Med3.AlarmMin = 38;
             Med3.nCmptmt = 3;
             Med3.nPills = 1;
-            Med3.Length = 10;
-            memcpy(Med3.Payload, "Medicine3", Med3.Length);
+            char *MedInfo3 = "Medicine3";
+            Med3.Length = strlen(MedInfo3);
+            memcpy(Med3.Payload, MedInfo3, Med3.Length);
 
             Pkt.Meds[0] = Med1;
             Pkt.Meds[1] = Med2;
@@ -860,7 +891,6 @@ void mainThread(void * args)
         {
             UART_PRINT("Error scheduling event\r\n");
         }
-        */
 
         int count = 0;
 
@@ -928,28 +958,36 @@ void mainThread(void * args)
             if (count % 2 == 0)
             {
                 LED_allOn();
+                UART_PRINT("Turned LEDs on\r\n");
             }
             else
             {
                 LED_allOff();
+                UART_PRINT("Turned LEDs off\r\n");
             }
             */
 
-            count++;
-
+            /*
             char Info[50];
             sprintf(Info, "Medicine1\nMedicine2\n%d", count);
             //char *Info = "Medicine1\r\nMedicine2\r\n%d";
             Screen_printMedInfo(Info);
+            */
 
+            /*
             if (count % 2 == 0)
             {
                 Speaker_on();
+                UART_PRINT("Speaker turned on\r\n");
             }
             else
             {
                 Speaker_off();
+                UART_PRINT("Speaker turned off\r\n");
             }
+            */
+
+            count++;
 
             sleep(10);
         }
@@ -958,9 +996,9 @@ void mainThread(void * args)
         peripheralThreadStop = true;
 
         //wait for server to stop
-        pthread_join(udpServerThread, NULL);
+        //pthread_join(udpServerThread, NULL);
         //wait for peripherals to stop
-        pthread_join(peripheralThread, NULL);
+        //pthread_join(peripheralThread, NULL);
     }
 }
 
@@ -986,7 +1024,7 @@ extern void RTC_C_IRQHandler(uintptr_t Arg)
         UART_PRINT("RTC Int: Minute Passed\r\n");
 
         //update screen time display every minute
-        Screen_updateTime(newTime.hours, newTime.minutes);
+        //Screen_updateTime(newTime.hours, newTime.minutes);
 
         pthread_mutex_lock(&SMO_Mutex);
         if (SMO_Ctrl.Timer.Timing)
@@ -1042,6 +1080,53 @@ static void SMO_okayButtonHandler(Button_Handle handle, Button_EventMask events)
         UART_PRINT("Okay button clicked\r\n");
         pthread_mutex_lock(&SMO_Mutex);
         //user presses button to acknowledge event
+        if (SMO_Ctrl.Timer.Timing)
+        {
+            SMO_Timer_stop(&SMO_Ctrl.Timer);
+            SMO_stopEvent();
+        }
+        pthread_mutex_lock(&SMO_Mutex);
+    }
+}
+
+static void SMO_setButtonIRQ(void)
+{
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P5, GPIO_PIN7);
+    GPIO_clearInterruptFlag(GPIO_PORT_P5, GPIO_PIN7);
+    GPIO_enableInterrupt(GPIO_PORT_P5, GPIO_PIN7);
+    GPIO_interruptEdgeSelect(GPIO_PORT_P5, GPIO_PIN7, GPIO_LOW_TO_HIGH_TRANSITION);
+    //NVIC_ClearPendingIRQ(PORT5_IRQn);
+    //GPIO_registerInterrupt(GPIO_PORT_P5, SMO_buttonIRQHandler);
+    Interrupt_enableInterrupt(INT_PORT5);
+    //Interrupt_enableMaster();
+
+    Hwi_Params HwiParams;
+
+    Hwi_Params_init(&HwiParams);
+    HwiParams.priority = 0x41;
+
+    ButtonHwi = (Hwi_Handle) Hwi_create(INT_PORT5, PORT5_IRQHandler, &HwiParams, NULL);
+    if (ButtonHwi == NULL)
+    {
+        UART_PRINT("Error making button interrupt\r\n");
+        while (1);
+    }
+}
+
+void PORT5_IRQHandler(void)
+{
+    uint32_t Status;
+
+    Status = GPIO_getEnabledInterruptStatus(GPIO_PORT_P5);
+
+    UART_PRINT("In P5 Interrupt\r\n");
+
+    if (Status & GPIO_PIN7)
+    {
+        GPIO_clearInterruptFlag(GPIO_PORT_P5, GPIO_PIN7);
+        UART_PRINT("Button clicked\r\n");
+        pthread_mutex_lock(&SMO_Mutex);
+        //user pressed button to acknowledge event
         if (SMO_Ctrl.Timer.Timing)
         {
             SMO_Timer_stop(&SMO_Ctrl.Timer);

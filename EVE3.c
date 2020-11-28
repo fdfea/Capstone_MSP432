@@ -1,5 +1,7 @@
 #include "EVE.h"
 #include "Board.h"
+#include <string.h>
+#include <stdlib.h>
 
 void delay(uint32_t ms){
 	uint32_t count;
@@ -237,12 +239,12 @@ void EVE_setSound(uint16_t sound, uint16_t pitch){
 
 
 void EVE_startSound(){
-	waitFIFO();
+	//waitFIFO();
 	EVE_write8(REG_PLAY + RAM_REG, 1);
 }
 
 void EVE_stopSound(){
-    waitFIFO();
+    //waitFIFO();
     EVE_write8(REG_PLAY + RAM_REG, 0);
 }
 

@@ -6,6 +6,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "uart_term.h"
+
 #define GRAY  	    0x919191UL
 #define BLACK  	    0x222222UL
 #define WHITE  	    0xFFFFFFUL
@@ -22,12 +24,20 @@ int min;
 int hour;
 bool speakerOn;
 
+//extern I2C_Handle i2cHandle;
+
 void LED_init(){
 	I2C_init();
 	/* Create I2C for usage */
 	I2C_Params_init(&i2cParams);
 	i2cParams.bitRate = I2C_100kHz;
 	i2cHandle = I2C_open(Board_I2C1, &i2cParams);
+	if (i2cHandle == NULL)
+	{
+	    UART_PRINT("Error opening I2C\r\n");
+	    while (1);
+	}
+    UART_PRINT("Opened peripheral I2C\r\n");
 	LP5018_init();
 	LP5018_setAllBrightness(0);
 	LP5018_setAllColor(0,128,0);
@@ -150,20 +160,25 @@ void *peripheralThreadProc(void *arg0){
         Screen_updateTime(hour, min);
 	    // Update display
 	     */
-		Screen_update();
+		//Screen_update();
 	}
 	return (0);
 }
 
 void Speaker_init(void){
-	EVE_setVolume(0x80);
-	EVE_setSound(SQUAREWAVE, MIDI_C1);
-}
-
-void Speaker_on(void){
+	EVE_setVolume(0x00);
+	//EVE_setSound(SQUAREWAVE, MIDI_C1);
+	EVE_setSound(WARBLE, MIDI_C1);
+	//--
 	EVE_startSound();
 }
 
+void Speaker_on(void){
+	//EVE_startSound();
+	EVE_setVolume(0xFF);
+}
+
 void Speaker_off(void){
-	EVE_stopSound();
+	//EVE_stopSound();
+	EVE_setVolume(0x00);
 }

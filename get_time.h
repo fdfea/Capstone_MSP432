@@ -68,6 +68,7 @@
 
 #define SL_STOP_TIMEOUT         (200)
 
+#define SECONDS_SINCE_1900          3815231770
 #define SECONDS_BEFORE_UNIX_EPOCH   2208988800
 #define TZ_EST_OFFSET_SECS          18000
 

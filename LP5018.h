@@ -12,10 +12,11 @@ uint8_t rxBuffer[32];
 
 I2C_Handle		i2cHandle;
 I2C_Params		i2cParams;
-I2C_Transaction i2cTransaction;
+//I2C_Transaction i2cTransaction;
 
 // Function Prototypes
 void LP5018_init();
+void LP5018_read();
 void LP5018_setColor(uint8_t led, uint8_t r, uint8_t g, uint8_t b);
 void LP5018_setAllColor(uint8_t r, uint8_t g, uint8_t b);
 void LP5018_setBrightness(uint8_t led, uint8_t brightness);
