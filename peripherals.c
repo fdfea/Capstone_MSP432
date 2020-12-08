@@ -1,10 +1,14 @@
-#include "EVE.h"
-#include "LP5018.h"
-#include "board.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
+
+#include "EVE.h"
+#include "LP5018.h"
+#include "board.h"
+
+#include "peripherals.h"
 
 #include "uart_term.h"
 
@@ -34,10 +38,10 @@ void LED_init(){
 	i2cHandle = I2C_open(Board_I2C1, &i2cParams);
 	if (i2cHandle == NULL)
 	{
-	    UART_PRINT("Error opening I2C\r\n");
+	    //UART_PRINT("Error opening I2C\r\n");
 	    while (1);
 	}
-    UART_PRINT("Opened peripheral I2C\r\n");
+    //UART_PRINT("Opened peripheral I2C\r\n");
 	LP5018_init();
 	LP5018_setAllBrightness(0);
 	LP5018_setAllColor(0,128,0);
@@ -60,7 +64,7 @@ void LED_allOff(void){
 }
 
 void Screen_background(){
-	EVE_cmdBGColor(BLACK);
+	EVE_cmdBGColor(BLACK/*0x008000*/);
 	EVE_cmd(VERTEX_FORMAT(0));
 	// Divide the screen
 	EVE_cmd(DL_BEGIN | LINES);
@@ -76,17 +80,23 @@ void Screen_init(){
     SPI_Params_init(&spiParams);
     spiParams.bitRate = 1000000;
     spiHandle = SPI_open(Board_SPI4, &spiParams);
+    //UART_PRINT("Here 1\r\n");
 	EVE_init();
-	EVE_initFlash();
+	//EVE_initFlash();
+    //UART_PRINT("Here 2\r\n");
     // Loading screen while waiting for wifi
 	EVE_startBurst();
+    //UART_PRINT("Here 3\r\n");
 	EVE_cmd(CMD_DLSTART);
     EVE_cmd(DL_CLEAR_RGB | BLACK);
     EVE_cmd(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG);
     EVE_cmdSpinner(400,240,1,1);
 	EVE_cmd(DL_DISPLAY);
 	EVE_cmd(CMD_SWAP);
+    //UART_PRINT("Here 4\r\n");
 	EVE_sendBurst();
+	//Screen_reset();
+	//UART_PRINT("Here 5\r\n");
 }
 
 void Screen_printf(const char *format, ...){
@@ -100,7 +110,7 @@ void Screen_printMedInfo(char *MedInfo){
 	sprintf(printBuf, MedInfo);
 }
 
-void Screen_reset(){
+void Screen_reset(void){
 	memset(printBuf, 0, sizeof(printBuf));
 	//Screen_update();
 }
@@ -114,7 +124,8 @@ void Screen_updateTime(int Hour, int Min){
 }
 
 void Screen_updateDate(char *Date) {
-	snprintf(dateString, 20, Date);
+	//snprintf(dateString, 20, "%s", Date);
+    sprintf(dateString, "%s", Date);
 }
 
 void Screen_update(){
@@ -130,17 +141,20 @@ void Screen_update(){
 	EVE_cmdText(750, 40, 28, 0, timeString2);
 	EVE_cmdText(580, 65, 29, 0, dateString);
 	// Display medication info / other info
-	EVE_cmdText(10, 150, 30, 0, printBuf);
+	//EVE_cmdText(10, 150, 30, 0, printBuf);
 	EVE_cmd(DL_DISPLAY);
 	EVE_cmd(CMD_SWAP);
 	EVE_sendBurst();
 }
 
 void *peripheralThreadProc(void *arg0){
-	//Screen_updateDate("November 14, 2020");
-	sec = 58;
-	min = 59;
-	hour = 11;
+    //delay(1000);
+    sleep(5);
+    Screen_updateTime(15, 27);
+	Screen_updateDate("November 14, 2020");
+	//sec = 58;
+	//min = 59;
+	//hour = 11;//
 	while(!peripheralThreadStop){
 		// Simple clock, replace with rtc
 	    /*
@@ -158,10 +172,17 @@ void *peripheralThreadProc(void *arg0){
             }
         }
         Screen_updateTime(hour, min);
+        */
 	    // Update display
-	     */
-		//Screen_update();
+	    Screen_update();
+	    //UART_PRINT("Done updating\r\n");
+		//UART_PRINT("Peripheral to sleep\r\n");
+		//usleep(10000);
+        //sleep(1);
+		delay(1000);
+		//UART_PRINT("Peripheral wake\r\n");
 	}
+	//UART_PRINT("Peripheral thread stopping\r\n");
 	return (0);
 }
 

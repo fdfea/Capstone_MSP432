@@ -1,7 +1,10 @@
-#include "EVE.h"
-#include "Board.h"
 #include <string.h>
 #include <stdlib.h>
+
+#include "EVE.h"
+#include "Board.h"
+
+#include "uart_term.h"
 
 void delay(uint32_t ms){
 	uint32_t count;
@@ -175,6 +178,7 @@ void EVE_init(){
     txIdx = 0;
     // Configure EVE Reset
     EVE_PDN_PORT->DIR |= EVE_PDN;
+    //UART_PRINT("Eve here 1\r\n");
 	EVE_reset();
     // Activate EVE Clock
 	EVE_sendHCMD(CLKEXT,0);
@@ -182,9 +186,14 @@ void EVE_init(){
 	EVE_sendHCMD(ACTIVE,0);
     // Wait for EVE to start up
 	delay(300);
-	while(EVE_read8(REG_ID + RAM_REG) != 0x7C){
+	//UART_PRINT("Eve here 2\r\n");
+	uint8_t readVal = 0x00;
+	while(/*EVE_read8(REG_ID + RAM_REG)*/readVal != 0x7C){
+	    readVal = EVE_read8(REG_ID + RAM_REG);
+	    //UART_PRINT("%d\r\n", readVal);
 		delay(1);
 	}
+    //UART_PRINT("Eve here 3\r\n");
     // Set backlight to 0% power
 	EVE_write8(REG_PWM_DUTY + RAM_REG, 0);
 	// Initialize Display
@@ -212,7 +221,9 @@ void EVE_init(){
 	EVE_write8(REG_PCLK + RAM_REG, PCLK);
 	EVE_write8(REG_PWM_DUTY + RAM_REG, 0x10);
     // Wait for FIFO queue to empty
+    //UART_PRINT("Eve here 4\r\n");
 	waitFIFO();
+    //UART_PRINT("Eve here 5\r\n");
 }
 
 uint32_t EVE_initFlash(){
@@ -225,7 +236,7 @@ uint32_t EVE_initFlash(){
     EVE_burst32(CMD_FLASHFAST);
     EVE_burst32(0);
     EVE_sendBurst();
-    waitFIFO();
+    //waitFIFO();
     offset = EVE_read16(REG_CMD_WRITE + RAM_REG);
     offset -= 4;
     offset &= 0x0fff;
@@ -233,7 +244,7 @@ uint32_t EVE_initFlash(){
 }
 
 void EVE_setSound(uint16_t sound, uint16_t pitch){
-	waitFIFO();
+	//waitFIFO();
 	EVE_write16(REG_SOUND + RAM_REG, sound |= (pitch << 8));
 }
 
@@ -249,12 +260,12 @@ void EVE_stopSound(){
 }
 
 void EVE_toggleSound(){
-    waitFIFO();
+    //waitFIFO();
     EVE_write8(REG_PLAY + RAM_REG, EVE_read8(REG_PLAY + RAM_REG)^1);
 }
 
 void EVE_setVolume(uint8_t vol){
-	waitFIFO();
+	//waitFIFO();
 	EVE_write8(REG_VOL_SOUND + RAM_REG, vol);
 }
 
@@ -303,6 +314,8 @@ void EVE_cmdText(int16_t x, int16_t y, int16_t font, uint16_t options, char* tex
     EVE_burst16(font);
     EVE_burst16(options);
     EVE_writeString(text);
+    //----------------
+    //waitFIFO();
 }
 
 void EVE_cmdAppend(uint32_t ptr, uint32_t len){
@@ -328,7 +341,7 @@ void EVE_cmdLoadImage(uint32_t dest, uint32_t options, uint8_t *data, uint32_t l
     EVE_burst32(dest);
     EVE_burst32(options);
     EVE_sendBurst();
-    waitFIFO();
+    //waitFIFO();
     while(bytes < len){
         blockSize = (len-bytes) > 1000 ? 1000:bytes;
         EVE_startBurst();
@@ -347,7 +360,7 @@ void EVE_cmdLoadImage(uint32_t dest, uint32_t options, uint8_t *data, uint32_t l
         }
         EVE_sendBurst();
         bytes+=blockSize;
-        waitFIFO();
+        //waitFIFO();
     }
 }
 

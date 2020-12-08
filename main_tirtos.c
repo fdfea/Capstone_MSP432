@@ -51,13 +51,14 @@ extern void *mainThread(void *arg0);
  */
 int main(void)
 {
-    pthread_t           thread;//, i2c_thread;
+    pthread_t           thread;// i2c_thread;
     pthread_attr_t      attrs;
     struct sched_param  priParam;
     int                 retc;
 
     /* Call driver init functions */
     Board_initGeneral();
+    ////
 
     /* Initialize the attributes structure with default values */
     pthread_attr_init(&attrs);

@@ -18,6 +18,7 @@ void LP5018_init(){
     UART_PRINT("Started transfering LP5018\r\n");
     do {
         retVal = I2C_transfer(i2cHandle, &i2cTransaction);
+        UART_PRINT("%d\r\n", retVal);
     } while (!retVal);
     UART_PRINT("Finished initializing LP5018\r\n");
 }

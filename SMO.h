@@ -54,8 +54,8 @@ typedef struct SMO_PacketMed
 {
     uint8_t AlarmHour; //hour of alarm
     uint8_t AlarmMin; //minute of alarm
-    uint8_t nCmptmt; //which compartment med is in
     uint8_t nPills; //how many pills to take
+    uint8_t nCmptmt; //which compartment med is in
     uint8_t Length; //length of payload
     char Payload[SMO_PACKET_MED_PAYLOAD_SIZE]; //name of med, could add other information
 

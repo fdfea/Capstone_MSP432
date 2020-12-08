@@ -59,11 +59,11 @@ extern "C"
 /* is executed. */
 
 /* AP SSID */
-#define SSID_NAME               "" //ENTER NETWORK NAME HERE
+#define SSID_NAME               "Valley House" //ENTER NETWORK NAME HERE
 /* Security type (OPEN or WEP or WPA) */
 #define SECURITY_TYPE           SL_WLAN_SEC_TYPE_WPA_WPA2 /*SL_WLAN_SEC_TYPE_OPEN*/
 /* Password of the secured AP */
-#define SECURITY_KEY            "" //ENTER NETWORK PASSWORD HERE (Don't push this to GitHub you dummy)
+#define SECURITY_KEY            "Charlottesville1!" //ENTER NETWORK PASSWORD HERE (Don't push this to GitHub you dummy)
 #define SSID_AP_MODE            "<ap-ssid>"
 #define SEC_TYPE_AP_MODE        SL_WLAN_SEC_TYPE_OPEN
 #define PASSWORD_AP_MODE        ""
