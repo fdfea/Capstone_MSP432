@@ -162,6 +162,7 @@ void Screen_update(void)
 	EVE_cmdText(580, 65, 29, 0, dateString);
 	// Display medication info / other info
 	EVE_cmdText(10, 150, 30, 0, printBuf);
+	EVE_cmdText(10, 65, 28, 0, deviceIdString);
 	EVE_cmd(DL_DISPLAY);
 	EVE_cmd(CMD_SWAP);
 	EVE_sendBurst();
