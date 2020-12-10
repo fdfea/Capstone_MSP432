@@ -3,11 +3,7 @@
 #define SMO_H
 
 #include <stdint.h>
-#include <time.h>
 #include <stdbool.h>
-#include <pthread.h>
-
-#include "rtc.h"
 
 #define SMO_VECTOR_MAX_SIZE     10
 #define SMO_MAX_COMPARTMENTS    6
@@ -17,6 +13,8 @@
 #define SMO_PACKET_MAX_MEDS             6
 #define SMO_PACKET_MED_PAYLOAD_SIZE     30
 #define SMO_PACKET_TYPE_HEADER          0x98
+
+#define SMO_TIMER_DELAY     1
 
 typedef struct SMO_Event
 {
@@ -38,6 +36,8 @@ typedef struct SMO_Timer
 {
     volatile bool Timing;
     volatile int Count;
+    volatile bool Delaying;
+    volatile int Delay;
 
 } SMO_Timer;
 

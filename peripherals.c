@@ -4,67 +4,70 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+
+#include "peripherals.h"
 #include "EVE.h"
 #include "LP5018.h"
 #include "board.h"
-
-#include "peripherals.h"
-
-#include "uart_term.h"
 
 #define GRAY  	    0x919191UL
 #define BLACK  	    0x222222UL
 #define WHITE  	    0xFFFFFFUL
 #define LAYOUT_Y1   120
 
+#define SPI_BITRATE     1000000
+
+#define SCREEN_UPDATE_INTERVAL_USEC 250000
+
 extern volatile bool peripheralThreadStop;
 
-char printBuf[1024];
-char timeString[10];
-char timeString2[2];
-char dateString[20];
-int sec;
-int min;
-int hour;
+char printBuf[1024]; //for medInfo to screen
+char timeString[10]; //for time to screen
+char timeString2[2]; //for am/pm to screen
+char dateString[20]; //for month and year to screen
+char deviceIdString[25]; //for device Id to screen
+
 bool speakerOn;
 
-//extern I2C_Handle i2cHandle;
-
-void LED_init(){
+void LED_init(void)
+{
 	I2C_init();
-	/* Create I2C for usage */
 	I2C_Params_init(&i2cParams);
 	i2cParams.bitRate = I2C_100kHz;
 	i2cHandle = I2C_open(Board_I2C1, &i2cParams);
 	if (i2cHandle == NULL)
 	{
-	    //UART_PRINT("Error opening I2C\r\n");
 	    while (1);
 	}
-    //UART_PRINT("Opened peripheral I2C\r\n");
 	LP5018_init();
 	LP5018_setAllBrightness(0);
 	LP5018_setAllColor(0,128,0);
 }
 
-void LED_on(int nLed){
+void LED_on(int nLed)
+{
 	LP5018_setBrightness(nLed, 128);
 }
 
-void LED_allOn(void){
+void LED_allOn(void)
+{
 	LP5018_setAllBrightness(128);
 }
 
-void LED_off(int nLed){
+void LED_off(int nLed)
+{
 	LP5018_setBrightness(nLed, 0);
 }
 
-void LED_allOff(void){
+void LED_allOff(void)
+{
 	LP5018_setAllBrightness(0);
 }
 
-void Screen_background(){
-	EVE_cmdBGColor(BLACK/*0x008000*/);
+void Screen_background(void)
+{
+	EVE_cmdBGColor(BLACK);
 	EVE_cmd(VERTEX_FORMAT(0));
 	// Divide the screen
 	EVE_cmd(DL_BEGIN | LINES);
@@ -75,60 +78,77 @@ void Screen_background(){
 	EVE_cmd(DL_END);
 }
 
-void Screen_init(){
+void Screen_init(void)
+{
     SPI_init();
     SPI_Params_init(&spiParams);
-    spiParams.bitRate = 1000000;
+    spiParams.bitRate = SPI_BITRATE;
     spiHandle = SPI_open(Board_SPI4, &spiParams);
-    //UART_PRINT("Here 1\r\n");
+    if (spiHandle == NULL)
+    {
+        while(1);
+    }
+    Screen_reset();
 	EVE_init();
-	//EVE_initFlash();
-    //UART_PRINT("Here 2\r\n");
+	EVE_initFlash();
     // Loading screen while waiting for wifi
 	EVE_startBurst();
-    //UART_PRINT("Here 3\r\n");
 	EVE_cmd(CMD_DLSTART);
     EVE_cmd(DL_CLEAR_RGB | BLACK);
     EVE_cmd(DL_CLEAR | CLR_COL | CLR_STN | CLR_TAG);
     EVE_cmdSpinner(400,240,1,1);
 	EVE_cmd(DL_DISPLAY);
 	EVE_cmd(CMD_SWAP);
-    //UART_PRINT("Here 4\r\n");
 	EVE_sendBurst();
-	//Screen_reset();
-	//UART_PRINT("Here 5\r\n");
 }
 
-void Screen_printf(const char *format, ...){
+void Screen_printf(const char *format, ...)
+{
 	va_list args;
 	va_start(args, format);
-	sprintf(printBuf, format, args);
+	snprintf(printBuf, sizeof(printBuf), format, args);
 	va_end(args);
 }
 
-void Screen_printMedInfo(char *MedInfo){
-	sprintf(printBuf, MedInfo);
+void Screen_printMedInfo(char *MedInfo)
+{
+	snprintf(printBuf, sizeof(printBuf), MedInfo);
 }
 
-void Screen_reset(void){
+void Screen_printDeviceId(char *DeviceId)
+{
+    snprintf(deviceIdString, sizeof(deviceIdString), DeviceId);
+}
+
+void Screen_removeMedInfo(void)
+{
+    memset(printBuf, 0, sizeof(printBuf));
+}
+
+void Screen_reset(void)
+{
 	memset(printBuf, 0, sizeof(printBuf));
-	//Screen_update();
+    memset(timeString, 0, sizeof(timeString));
+    memset(timeString2, 0, sizeof(timeString2));
+    memset(dateString, 0, sizeof(dateString));
+    memset(deviceIdString, 0, sizeof(deviceIdString));
 }
 
-void Screen_updateTime(int Hour, int Min){
+void Screen_updateTime(int Hour, int Min)
+{
 	// Assuming 24 hour input, convert to 12 hour
-	sprintf(timeString2, Hour > 11 && Hour < 24 ? "PM":"AM");
-	Hour = Hour > 12 ? Hour-12:Hour;
-	// Zero pad single digit min
-	sprintf(timeString, Min < 10 ? "%d:0%d":"%d:%d", Hour, Min);
+	snprintf(timeString2, sizeof(timeString2), Hour > 11 && Hour < 24 ? "PM":"AM");
+	Hour = Hour > 12 ? Hour-12 : Hour;
+	snprintf(timeString, sizeof(timeString), "%02d:%02d", Hour, Min);
 }
 
-void Screen_updateDate(char *Date) {
-	//snprintf(dateString, 20, "%s", Date);
-    sprintf(dateString, "%s", Date);
+void Screen_updateDate(char *Date)
+{
+	snprintf(dateString, 20, Date);
 }
 
-void Screen_update(){
+void Screen_update(void)
+{
 	EVE_startBurst();
 	// Clear screen
 	EVE_cmd(CMD_DLSTART);
@@ -141,65 +161,42 @@ void Screen_update(){
 	EVE_cmdText(750, 40, 28, 0, timeString2);
 	EVE_cmdText(580, 65, 29, 0, dateString);
 	// Display medication info / other info
-	//EVE_cmdText(10, 150, 30, 0, printBuf);
+	EVE_cmdText(10, 150, 30, 0, printBuf);
 	EVE_cmd(DL_DISPLAY);
 	EVE_cmd(CMD_SWAP);
 	EVE_sendBurst();
 }
 
-void *peripheralThreadProc(void *arg0){
-    //delay(1000);
-    sleep(5);
-    Screen_updateTime(15, 27);
-	Screen_updateDate("November 14, 2020");
-	//sec = 58;
-	//min = 59;
-	//hour = 11;//
-	while(!peripheralThreadStop){
-		// Simple clock, replace with rtc
-	    /*
-		sec++;
-		delay(1000);
-        if (sec == 60) {
-            sec = 0;
-            min++;
-            if (min == 60) {
-                min = 0;
-                hour++;
-                if(hour == 25){
-                    hour = 1;
-                }
-            }
-        }
-        Screen_updateTime(hour, min);
-        */
-	    // Update display
+void *peripheralThreadProc(void *pArg)
+{
+    delay(100);
+	while(!peripheralThreadStop)
+	{
 	    Screen_update();
-	    //UART_PRINT("Done updating\r\n");
-		//UART_PRINT("Peripheral to sleep\r\n");
-		//usleep(10000);
-        //sleep(1);
-		delay(1000);
-		//UART_PRINT("Peripheral wake\r\n");
+	    usleep(SCREEN_UPDATE_INTERVAL_USEC);
 	}
-	//UART_PRINT("Peripheral thread stopping\r\n");
-	return (0);
+	return NULL;
 }
 
-void Speaker_init(void){
+void Speaker_init(void)
+{
 	EVE_setVolume(0x00);
 	//EVE_setSound(SQUAREWAVE, MIDI_C1);
-	EVE_setSound(WARBLE, MIDI_C1);
-	//--
+	EVE_setSound(ALARM, MIDI_C1);
 	EVE_startSound();
+    speakerOn = false;
 }
 
-void Speaker_on(void){
-	//EVE_startSound();
+void Speaker_on(void)
+{
+	EVE_startSound();
 	EVE_setVolume(0xFF);
+	speakerOn = true;
 }
 
-void Speaker_off(void){
-	//EVE_stopSound();
+void Speaker_off(void)
+{
+	EVE_stopSound();
 	EVE_setVolume(0x00);
+	speakerOn = false;
 }

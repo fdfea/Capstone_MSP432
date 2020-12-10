@@ -3,9 +3,8 @@
 #include <string.h>
 #include <errno.h>
 
-#include "uart_term.h"
-
 #include "SMO.h"
+#include "uart_term.h"
 
 static void SMO_Event_init(SMO_Event *Event);
 static void SMO_Event_setTime(SMO_Event *Event, uint8_t AlarmHour, uint8_t AlarmMin);
@@ -38,7 +37,7 @@ static int SMO_Event_addMed(SMO_Event *Event, uint8_t nCmptmt, uint8_t nPills)
 
     if (nCmptmt >= SMO_MAX_COMPARTMENTS || ((Event->Compartments & (1 << nCmptmt)) != 0))
     {
-        //UART_PRINT("Error adding medication\r\n");
+        UART_PRINT("Error adding medication\r\n");
         Res = -EINVAL;
         goto Error;
     }
@@ -86,12 +85,12 @@ static int SMO_Vector_addMed(SMO_Vector *Vec, SMO_PacketMed *Med)
     if (Vec->Size >= SMO_VECTOR_MAX_SIZE)
     {
         Res = -EINVAL;
-        //UART_PRINT("Vector capacity full\r\n");
+        UART_PRINT("Vector capacity full\r\n");
         goto Error;
     }
 
     //events are sorted chronologically, with respect to time of day
-    //find where medication should go
+    //find where medication should go and insert it
     AddIndex = Vec->Size;
     for (i = 0; i < Vec->Size; ++i)
     {
@@ -99,8 +98,8 @@ static int SMO_Vector_addMed(SMO_Vector *Vec, SMO_PacketMed *Med)
         if (TmpEvent->AlarmHour == Med->AlarmHour
             && TmpEvent->AlarmMin == Med->AlarmMin)
         {
-            //UART_PRINT("Adding med to event at %02d:%02d in Cmptmt %d\r\n",
-                       //TmpEvent->AlarmHour, TmpEvent->AlarmMin, Med->nCmptmt);
+            UART_PRINT("Adding med to event at %02d:%02d in Cmptmt %d\r\n",
+                       TmpEvent->AlarmHour, TmpEvent->AlarmMin, Med->nCmptmt);
             SMO_Event_addMed(TmpEvent, Med->nCmptmt, Med->nPills);
             goto Success;
         }
@@ -113,7 +112,7 @@ static int SMO_Vector_addMed(SMO_Vector *Vec, SMO_PacketMed *Med)
         }
     }
 
-    //UART_PRINT("Creating new event for med at %02d:%02d in Cmptmt %d\r\n", Med->AlarmHour, Med->AlarmMin, Med->nCmptmt);
+    UART_PRINT("Creating new event for med at %02d:%02d in Cmptmt %d\r\n", Med->AlarmHour, Med->AlarmMin, Med->nCmptmt);
     //allocate memory for the new event
     NewEvent = malloc(sizeof(SMO_Event));
     SMO_Event_init(NewEvent);
@@ -170,18 +169,18 @@ void SMO_Timer_init(SMO_Timer *Timer)
 
 void SMO_Timer_start(SMO_Timer *Timer)
 {
-    //UART_PRINT("Starting timer\r\n");
     //start counting up to SMO event timeout, every minute
     Timer->Count = 0;
     Timer->Timing = true;
+    Timer->Delaying = false;
+    Timer->Delay = 0;
 }
 
 void SMO_Timer_stop(SMO_Timer *Timer)
 {
-    //UART_PRINT("Stopping timer\r\n");
     //reset timer state
     Timer->Timing = false;
-    Timer->Count = 0;
+    Timer->Count = SMO_TIMER_DELAY;
 }
 
 void SMO_Control_init(SMO_Control *Ctrl)
@@ -233,7 +232,7 @@ static int SMO_Control_addMedStr(SMO_Control *Ctrl, uint8_t nCmptmt, char *MedSt
     {
         free(Ctrl->CompartmentStrings[nCmptmt]);
     }
-    //UART_PRINT("Adding med info in %d, %s\r\n", nCmptmt, Str);
+    UART_PRINT("Adding med info in %d, %s\r\n", nCmptmt, Str);
     Ctrl->CompartmentStrings[nCmptmt] = strdup(Str);
 
 Error:

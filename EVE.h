@@ -1,11 +1,10 @@
 #ifndef __EVE_H
 #define __EVE_H
 
-/* Driver Header files */
 #include <stdint.h>
+
 #include <ti/drivers/SPI.h>
 #include <ti/devices/msp432p4xx/inc/msp.h>
-
 
 SPI_Handle      spiHandle;
 SPI_Params      spiParams;

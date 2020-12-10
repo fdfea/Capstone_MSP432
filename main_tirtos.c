@@ -32,13 +32,9 @@
  */
 
 #include <stdint.h>
-
 #include <pthread.h>
-
 #include <ti/sysbios/BIOS.h>
-
 #include <ti/drivers/GPIO.h>
-
 #include "Board.h"
 
 extern void *mainThread(void *arg0);
@@ -57,8 +53,7 @@ int main(void)
     int                 retc;
 
     /* Call driver init functions */
-    Board_initGeneral();
-    ////
+    Board_initGeneral();//
 
     /* Initialize the attributes structure with default values */
     pthread_attr_init(&attrs);
@@ -78,19 +73,6 @@ int main(void)
         while (1) {}
     }
 
-    /*
-    priParam.sched_priority = 3;
-    retc = pthread_attr_setschedparam(&attrs, &priParam);
-    if (retc != 0) {
-        while (1) {}
-    }
-
-    retc = pthread_create(&i2c_thread, &attrs, i2cThread, NULL);
-    if (retc != 0) {
-        while (1) {}
-    }
-    */
-
     BIOS_start();
 
     return (0);
@@ -100,4 +82,3 @@ int main(void)
 void dummyOutput(void)
 {
 }
-
