@@ -4,9 +4,7 @@
 
 The Smart Medication Organizer (SMO) is a wirelessly programmable, internet-of-things device that assists in the consistent self-administration of pharmaceuticals by patients, in order to reduce nonadherence. To accomplish this goal, the SMO provides timed auditory and visual indications to signal to the user to take their medications. The device encompasses a screen, a speaker, a wall outlet power supply, a microcontroller, and six medication compartments, each with an LED. The electronics are located inside a wooden box to hide the details from the user. The device connects to a user's wireless local area network, where it can be reached from the user's personal or mobile device through a web application. The web application allows the user to configure when they need to take which medications, which compartment each medication is in, and dosage information. This information is encrypted to protect the user's data privacy and then sent to the device, where events are scheduled based on the information provided. When it is time for the user to take their medication, the speaker plays a sound to draw the user's attention, the LEDs indicate in which compartment the medication to take is located, and the screen displays other necessary dosage information. The user can stop the sound and LEDs by pressing an okay button to confirm they have taken their medication, and the next medication event will be scheduled automatically. The device is a compact, easy-to-use, and affordable solution to unintentional nonadherence. 
 
-<img src="images/smo-outside.jpeg" height="100"><img src="images/smo-inside.jpg" height="100">
-
-![Alt text](images/smo-outside.jpeg?raw=true | width=100) ![Alt text](images/smo-inside.jpg?raw=true | width=100)
+<img src="images/smo-outside.jpeg" height="250">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="images/smo-inside.jpg" height="250">
 
 ### **Explanation of Embedded Software**
 
